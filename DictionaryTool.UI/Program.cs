@@ -37,9 +37,10 @@ namespace DictionaryTool.UI
             var stardictRepository = new StardictRepository();
             var tatoebaRepository = new TatoebaRepository();
             var googleTranslateClient = new GoogleTranslateClient(httpClient);
+            var wiktionaryRepository = new WiktionaryViEnRepository(httpClient: httpClient);
             var trilingualLookupService = new TrilingualLookupService(
                 dictionaryService, cedictRepository, stardictRepository, tatoebaRepository,
-                googleTranslateClient);
+                googleTranslateClient, wiktionaryRepository);
 
             var historyRepository = new HistoryRepository();
             var bookmarkRepository = new BookmarkRepository();

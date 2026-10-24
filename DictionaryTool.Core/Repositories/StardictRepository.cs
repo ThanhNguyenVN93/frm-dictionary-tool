@@ -18,13 +18,19 @@ namespace DictionaryTool.Core.Repositories
         private readonly string _enViDictDzPath;
         private readonly string _viEnIdxPath;
         private readonly string _viEnDictDzPath;
+        // Nguồn VI-EN thứ 2 (EVDict) — tùy chọn, chất lượng cao hơn OVDP.
+        // Khi file tồn tại, import đè lên OVDP (INSERT OR REPLACE) để EVDict thắng.
+        private readonly string _viEnIdxPath2;
+        private readonly string _viEnDictDzPath2;
 
         public StardictRepository(
             string dbPath = null,
             string enViIdxPath = null,
             string enViDictDzPath = null,
             string viEnIdxPath = null,
-            string viEnDictDzPath = null)
+            string viEnDictDzPath = null,
+            string viEnIdxPath2 = null,
+            string viEnDictDzPath2 = null)
         {
             var path = dbPath ?? CcCedictRepository.GetDefaultDbPath();
 
@@ -42,7 +48,19 @@ namespace DictionaryTool.Core.Repositories
             _viEnIdxPath = viEnIdxPath ?? Path.Combine(baseDir, "vi-en", "star_vietanh.idx");
             _viEnDictDzPath = viEnDictDzPath ?? Path.Combine(baseDir, "vi-en", "star_vietanh.dict.dz");
 
+            // EVDict: tìm trong thư mục vi-en-ev (cùng format .idx/.dict.dz)
+            var evDictDir = Path.Combine(baseDir, "vi-en-ev");
+            _viEnIdxPath2 = viEnIdxPath2 ?? FindFirstFile(evDictDir, "*.idx");
+            _viEnDictDzPath2 = viEnDictDzPath2 ?? FindFirstFile(evDictDir, "*.dict.dz");
+
             EnsureCreated();
+        }
+
+        private static string FindFirstFile(string dir, string searchPattern)
+        {
+            if (!Directory.Exists(dir)) return null;
+            var files = Directory.GetFiles(dir, searchPattern);
+            return files.Length > 0 ? files[0] : null;
         }
 
         private SQLiteConnection OpenConnection()
@@ -72,6 +90,10 @@ namespace DictionaryTool.Core.Repositories
                             Word TEXT PRIMARY KEY COLLATE NOCASE,
                             DefinitionsJson TEXT NOT NULL,
                             WordNoDiacritics TEXT NOT NULL DEFAULT ''
+                        );
+                        CREATE TABLE IF NOT EXISTS ImportMeta (
+                            Key   TEXT PRIMARY KEY,
+                            Value TEXT NOT NULL
                         );";
                     command.ExecuteNonQuery();
                 }
@@ -163,9 +185,84 @@ namespace DictionaryTool.Core.Repositories
                 using (var connection = OpenConnection())
                 {
                     ImportIfEmpty(connection, "StardictEnVi", _enViIdxPath, _enViDictDzPath, progress, "Anh-Việt");
-                    ImportIfEmpty(connection, "StardictViEn", _viEnIdxPath, _viEnDictDzPath, progress, "Việt-Anh");
+                    ImportIfEmpty(connection, "StardictViEn", _viEnIdxPath, _viEnDictDzPath, progress, "Việt-Anh (OVDP)");
+
+                    // EVDict: nguồn bổ sung, chất lượng cao hơn OVDP.
+                    // Import sau OVDP với INSERT OR REPLACE nên EVDict thắng khi cùng 1 headword.
+                    // Chỉ import 1 lần (theo dõi qua ImportMeta), bỏ qua nếu file chưa có.
+                    if (!string.IsNullOrEmpty(_viEnIdxPath2) && !string.IsNullOrEmpty(_viEnDictDzPath2)
+                        && File.Exists(_viEnIdxPath2) && File.Exists(_viEnDictDzPath2))
+                    {
+                        ImportSupplementIfNeeded(connection, _viEnIdxPath2, _viEnDictDzPath2, progress, "Việt-Anh (EVDict)", "evdict_vi_en_imported");
+                    }
                 }
             });
+        }
+
+        /// <summary>
+        /// Import nguồn bổ sung VI-EN vào StardictViEn dùng INSERT OR REPLACE (ưu tiên
+        /// cao hơn OVDP). Chỉ chạy 1 lần — kiểm tra qua bảng ImportMeta.
+        /// </summary>
+        private static void ImportSupplementIfNeeded(
+            SQLiteConnection connection,
+            string idxPath,
+            string dictDzPath,
+            IProgress<string> progress,
+            string label,
+            string metaKey)
+        {
+            using (var checkCmd = connection.CreateCommand())
+            {
+                checkCmd.CommandText = "SELECT Value FROM ImportMeta WHERE Key = @key;";
+                checkCmd.Parameters.AddWithValue("@key", metaKey);
+                var val = checkCmd.ExecuteScalar() as string;
+                if (val == "1") return; // đã import rồi
+            }
+
+            progress?.Report("Đang nhập từ điển " + label + "...");
+
+            var grouped = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in StardictReader.ReadEntries(idxPath, dictDzPath))
+            {
+                if (!grouped.TryGetValue(entry.Key, out var list))
+                {
+                    list = new List<string>();
+                    grouped[entry.Key] = list;
+                }
+                list.AddRange(ParseDefinitionSegments(entry.Value, entry.Key));
+            }
+
+            using (var transaction = connection.BeginTransaction())
+            using (var insertCommand = connection.CreateCommand())
+            {
+                // INSERT OR REPLACE: đè lên OVDP nếu cùng headword, bổ sung entry mới
+                insertCommand.CommandText =
+                    "INSERT OR REPLACE INTO StardictViEn (Word, DefinitionsJson, WordNoDiacritics) " +
+                    "VALUES (@word, @json, @noDiacritics);";
+                var pWord = insertCommand.Parameters.Add("@word", System.Data.DbType.String);
+                var pJson = insertCommand.Parameters.Add("@json", System.Data.DbType.String);
+                var pND = insertCommand.Parameters.Add("@noDiacritics", System.Data.DbType.String);
+
+                foreach (var kvp in grouped)
+                {
+                    pWord.Value = kvp.Key;
+                    pJson.Value = Newtonsoft.Json.JsonConvert.SerializeObject(kvp.Value);
+                    pND.Value = VietnameseNormalizer.StripDiacritics(kvp.Key).ToLowerInvariant();
+                    insertCommand.ExecuteNonQuery();
+                }
+
+                // Ghi flag vào ImportMeta
+                using (var metaCmd = connection.CreateCommand())
+                {
+                    metaCmd.CommandText = "INSERT OR REPLACE INTO ImportMeta (Key, Value) VALUES (@key, '1');";
+                    metaCmd.Parameters.AddWithValue("@key", metaKey);
+                    metaCmd.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+            }
+
+            progress?.Report("Hoàn tất nhập từ điển " + label + ".");
         }
 
         private static void ImportIfEmpty(

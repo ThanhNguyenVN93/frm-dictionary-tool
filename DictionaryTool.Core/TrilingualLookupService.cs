@@ -8,6 +8,7 @@ using DictionaryTool.Core.Clients;
 using DictionaryTool.Core.Models;
 using DictionaryTool.Core.Repositories;
 
+
 namespace DictionaryTool.Core
 {
     /// <summary>
@@ -23,6 +24,7 @@ namespace DictionaryTool.Core
         private readonly ICcCedictRepository _cedictRepository;
         private readonly IStardictRepository _stardictRepository;
         private readonly ITatoebaRepository _tatoebaRepository;
+        private readonly WiktionaryViEnRepository _wiktionaryRepository;
         private readonly GoogleTranslateClient _googleTranslateClient;
 
         public TrilingualLookupService(
@@ -30,13 +32,15 @@ namespace DictionaryTool.Core
             ICcCedictRepository cedictRepository,
             IStardictRepository stardictRepository,
             ITatoebaRepository tatoebaRepository,
-            GoogleTranslateClient googleTranslateClient = null)
+            GoogleTranslateClient googleTranslateClient = null,
+            WiktionaryViEnRepository wiktionaryRepository = null)
         {
             _dictionaryService = dictionaryService ?? throw new ArgumentNullException(nameof(dictionaryService));
             _cedictRepository = cedictRepository ?? throw new ArgumentNullException(nameof(cedictRepository));
             _stardictRepository = stardictRepository ?? throw new ArgumentNullException(nameof(stardictRepository));
             _tatoebaRepository = tatoebaRepository ?? throw new ArgumentNullException(nameof(tatoebaRepository));
             _googleTranslateClient = googleTranslateClient;
+            _wiktionaryRepository = wiktionaryRepository;
         }
 
         public async Task<TrilingualResult> LookupAsync(string query, Language? languageHint = null, CancellationToken ct = default(CancellationToken))
@@ -197,28 +201,17 @@ namespace DictionaryTool.Core
                 }
             }
 
-            // Bước 5: cụm từ nhiều chữ (vd "xin chào") không có entry nguyên vẹn —
-            // thử từ cuối cùng làm từ khoá chính (tiếng Việt thường đặt từ chính sau).
-            if (trimmed.Contains(" "))
+            // Bước 5: Wiktionary API (online, có cache 30 ngày). Tra nguyên cụm từ —
+            // KHÔNG tách từ cuối vì tiếng Việt đặt head word ở đầu (bàn học, bao lì xì)
+            // nên last-word heuristic cho kết quả sai (học → study, xì → hiss).
+            // Cụm từ nhiều âm tiết không có trong offline sẽ do Google Translate xử lý.
+            if (_wiktionaryRepository != null)
             {
-                var lastWord = trimmed.Substring(trimmed.LastIndexOf(' ') + 1);
-                entry = await _stardictRepository.LookupViEnAsync(lastWord).ConfigureAwait(false);
-                if (!entry.NotFound) return entry;
-
-                // No-diacritics cho từ cuối cũng chỉ khi nó là ASCII thuần
-                var lastWordIsAscii = string.Equals(
-                    VietnameseNormalizer.StripDiacritics(lastWord), lastWord,
-                    StringComparison.OrdinalIgnoreCase);
-                if (lastWordIsAscii)
-                {
-                    entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(lastWord.ToLowerInvariant()).ConfigureAwait(false);
-                    if (!entry.NotFound) return entry;
-                }
+                var wiktEntry = await _wiktionaryRepository.LookupAsync(trimmed).ConfigureAwait(false);
+                if (!wiktEntry.NotFound) return wiktEntry;
             }
 
-            // Bước 6: fallback online — Google Translate (không cần API key).
-            // Chỉ dùng khi tất cả nguồn offline thất bại, nên không ảnh hưởng tốc độ
-            // tra những từ đã có trong StarDict.
+            // Bước 6 (GT): fallback cuối, không cần API key, xử lý tốt cụm từ nhiều âm tiết.
             if (_googleTranslateClient != null)
             {
                 var translations = await _googleTranslateClient.TranslateViToEnAsync(trimmed).ConfigureAwait(false);
