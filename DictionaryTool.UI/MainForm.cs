@@ -990,7 +990,8 @@ namespace DictionaryTool.UI
 
                     var audioUrl = phonetic.AudioUrl;
                     var capturedBtn = iconButton;
-                    iconButton.Click += async (s, e) => await PlayAudioAsync(audioUrl, capturedBtn).ConfigureAwait(true);
+                    var capturedWord = result.Word;
+                    iconButton.Click += async (s, e) => await PlayAudioAsync(audioUrl, capturedBtn, capturedWord).ConfigureAwait(true);
 
                     innerRow.Controls.Add(iconButton);
                 }
@@ -1131,13 +1132,35 @@ namespace DictionaryTool.UI
             };
         }
 
-        private async Task PlayAudioAsync(string audioUrl, Guna.UI2.WinForms.Guna2Button btn = null)
+        private async Task PlayAudioAsync(string audioUrl, Guna.UI2.WinForms.Guna2Button btn = null, string ttsWord = null)
         {
             if (btn != null) btn.FillColor = UiPalette.Accent;
             try
             {
-                var data = await _audioCacheRepository.GetOrDownloadAsync(audioUrl).ConfigureAwait(true);
+                var played = await TryPlayFromUrlAsync(audioUrl).ConfigureAwait(true);
 
+                // CDN gốc không phản hồi (dictionaryapi.dev 530, MW CDN 403) →
+                // dùng Google TTS làm fallback để vẫn có âm thanh.
+                var word = ttsWord ?? _currentResultQuery;
+                if (!played && !string.IsNullOrWhiteSpace(word))
+                {
+                    var encoded = Uri.EscapeDataString(word.Trim().ToLowerInvariant());
+                    var ttsUrl = $"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl=en&client=tw-ob";
+                    await TryPlayFromUrlAsync(ttsUrl).ConfigureAwait(true);
+                }
+            }
+            finally
+            {
+                if (btn != null && !btn.IsDisposed)
+                    btn.FillColor = UiPalette.AccentSoft;
+            }
+        }
+
+        private async Task<bool> TryPlayFromUrlAsync(string url)
+        {
+            try
+            {
+                var data = await _audioCacheRepository.GetOrDownloadAsync(url).ConfigureAwait(true);
                 using (var ms = new MemoryStream(data))
                 using (var reader = new Mp3FileReader(ms))
                 using (var outputDevice = new WaveOutEvent())
@@ -1146,19 +1169,14 @@ namespace DictionaryTool.UI
                     outputDevice.PlaybackStopped += (s, e) => tcs.TrySetResult(true);
                     outputDevice.Init(reader);
                     outputDevice.Play();
-                    // Timeout 15s để tránh treo nếu PlaybackStopped không fire
                     await System.Threading.Tasks.Task.WhenAny(
                         tcs.Task, System.Threading.Tasks.Task.Delay(15000)).ConfigureAwait(true);
                 }
+                return true;
             }
             catch (Exception)
             {
-                // Lỗi mạng/404/định dạng audio không được làm crash UI (spec 3.2).
-            }
-            finally
-            {
-                if (btn != null && !btn.IsDisposed)
-                    btn.FillColor = UiPalette.AccentSoft;
+                return false;
             }
         }
 
