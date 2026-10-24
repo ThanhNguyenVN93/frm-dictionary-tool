@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+    <startup>
+        <supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" />
+    </startup>
+    <appSettings>
+        <!-- Đăng ký miễn phí tại https://dictionaryapi.com — mỗi key giới hạn 1000 query/ngày -->
+        <add key="MerriamWebster:CollegiateApiKey" value="YOUR_COLLEGIATE_KEY_HERE" />
+        <add key="MerriamWebster:LearnerApiKey"    value="YOUR_LEARNERS_KEY_HERE" />
+        <!-- Global hotkey: Modifiers = bitmask MOD_CONTROL(2)|MOD_SHIFT(4), Key = VK code (Keys enum) -->
+        <add key="Hotkey:Modifiers" value="6" />
+        <add key="Hotkey:Key"       value="68" />
+        <!-- UI preferences (tự động lưu khi người dùng thay đổi) -->
+        <add key="UI:Language"        value="VI" />
+        <add key="UI:ClipboardEnabled" value="false" />
+        <add key="UI:LockedLanguage"  value="" />
+    </appSettings>
+</configuration>

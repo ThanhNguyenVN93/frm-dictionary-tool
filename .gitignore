@@ -1,0 +1,26 @@
+# Build outputs
+bin/
+obj/
+TestResults/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet
+packages/
+*.nupkg
+project.lock.json
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# API keys — commit App.config.example (placeholder), gitignore the real App.config
+DictionaryTool.UI/App.config
