@@ -582,7 +582,7 @@ namespace DictionaryTool.UI
 
         private void tsmiGopY_Click(object sender, EventArgs e)
         {
-            try { System.Diagnostics.Process.Start("https://github.com/"); }
+            try { System.Diagnostics.Process.Start("https://github.com/ThanhNguyenVN93/frm-dictionary-tool/issues"); }
             catch { }
         }
 
