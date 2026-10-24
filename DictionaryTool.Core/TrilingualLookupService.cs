@@ -103,11 +103,22 @@ namespace DictionaryTool.Core
 
             var bridgeWord = viEntry.NotFound ? null : ExtractBridgeWord(viEntry.Definitions);
             if (bridgeWord == null)
-            {
                 return;
-            }
 
             result.EnglishResult = await _dictionaryService.LookupAsync(bridgeWord, ct).ConfigureAwait(false);
+
+            // Nếu từ cầu nối offline không tìm được trong MW (vd lỗi đánh máy trong
+            // StarDict như "shoolmaster"), thử lại bằng Google Translate cho từ VI gốc.
+            if (result.EnglishResult.NotFound && _googleTranslateClient != null)
+            {
+                var translations = await _googleTranslateClient.TranslateViToEnAsync(word).ConfigureAwait(false);
+                if (translations.Count > 0)
+                {
+                    bridgeWord = translations[0];
+                    result.EnglishResult = await _dictionaryService.LookupAsync(bridgeWord, ct).ConfigureAwait(false);
+                }
+            }
+
             result.ChineseResult = await _cedictRepository.LookupByEnglishAsync(bridgeWord).ConfigureAwait(false);
             result.ExampleSentences = await _tatoebaRepository.GetExamplesForEnglishAsync(bridgeWord).ConfigureAwait(false);
         }
@@ -241,8 +252,16 @@ namespace DictionaryTool.Core
         /// </summary>
         private static readonly HashSet<string> BridgeWordStopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "a", "an", "the", "to", "of", "in", "on", "at", "is", "be", "to", "this", "that",
-            "and", "or", "as", "it", "its", "for", "with", "by",
+            // Articles, prepositions, conjunctions, pronouns
+            "a", "an", "the", "to", "of", "in", "on", "at", "is", "be", "this", "that",
+            "and", "or", "as", "it", "its", "for", "with", "by", "from", "into", "onto",
+            "also", "than", "then", "them", "they", "when", "will", "some", "such", "more",
+            "very", "well", "just", "much", "over", "same", "only", "each", "both",
+            // Động từ chức năng xuất hiện trong định nghĩa nhưng không mang nghĩa riêng
+            // (vd "to have a bath" → "have"; "to say goodbye" → "say")
+            "say", "have", "make", "take", "give", "get", "put", "set", "let", "see",
+            "try", "ask", "pay", "cut", "eat", "sit", "win", "buy", "run", "add",
+            "call", "come", "back", "turn", "show", "keep", "hold", "fall", "feel",
             // Quá chung chung — không dùng được làm bridge word có nghĩa
             "man", "woman", "boy", "girl", "one", "type", "kind", "form", "way", "used"
         };
