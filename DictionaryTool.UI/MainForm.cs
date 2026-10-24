@@ -566,9 +566,16 @@ namespace DictionaryTool.UI
             toolTipToolbar.SetToolTip(btnBookmarkToggle, UiStrings.TipBookmark);
             toolTipToolbar.SetToolTip(btnHistory, UiStrings.TipHistory);
             toolTipToolbar.SetToolTip(btnInfo, UiStrings.TipInfo);
+            toolTipToolbar.SetToolTip(btnHelp, UiStrings.TipHelp);
 
             UpdateLanguageChipLockState();
             _ = RefreshUsageLabelAsync();
+        }
+
+        private void btnHelp_Click(object sender, EventArgs e)
+        {
+            using (var form = new HelpForm())
+                form.ShowDialog(this);
         }
 
         private void tsmiAbout_Click(object sender, EventArgs e)

@@ -62,6 +62,7 @@ namespace DictionaryTool.UI
         private Guna.UI2.WinForms.Guna2Button btnRetry;
 
         private System.Windows.Forms.Label lblUsage;
+        private Guna.UI2.WinForms.Guna2Button btnHelp;
 
         private System.Windows.Forms.Timer debounceTimer;
 
@@ -125,6 +126,7 @@ namespace DictionaryTool.UI
             this.pnlError = new DictionaryTool.UI.FlickerFreePanel();
             this.lblErrorMessage = new System.Windows.Forms.Label();
             this.lblUsage = new System.Windows.Forms.Label();
+            this.btnHelp = new Guna.UI2.WinForms.Guna2Button();
             this.debounceTimer = new System.Windows.Forms.Timer(this.components);
             this.pnlLanguageChip.SuspendLayout();
             this.cmsInfo.SuspendLayout();
@@ -746,7 +748,22 @@ namespace DictionaryTool.UI
             this.lblUsage.Name = "lblUsage";
             this.lblUsage.Size = new System.Drawing.Size(0, 13);
             this.lblUsage.TabIndex = 14;
-            // 
+            //
+            // btnHelp
+            //
+            this.btnHelp.BorderRadius = 8;
+            this.btnHelp.FillColor = System.Drawing.Color.Transparent;
+            this.btnHelp.HoverState.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(46)))), ((int)(((byte)(50)))), ((int)(((byte)(61)))));
+            this.btnHelp.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(156)))), ((int)(((byte)(163)))), ((int)(((byte)(175)))));
+            this.btnHelp.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.btnHelp.Location = new System.Drawing.Point(942, 622);
+            this.btnHelp.Name = "btnHelp";
+            this.btnHelp.Size = new System.Drawing.Size(34, 24);
+            this.btnHelp.TabIndex = 20;
+            this.btnHelp.Text = "?";
+            this.btnHelp.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnHelp.Click += new System.EventHandler(this.btnHelp_Click);
+            //
             // debounceTimer
             // 
             this.debounceTimer.Interval = 450;
@@ -772,6 +789,7 @@ namespace DictionaryTool.UI
             this.Controls.Add(this.pnlLanguageChip);
             this.Controls.Add(this.txtSearch);
             this.Controls.Add(this.lblUsage);
+            this.Controls.Add(this.btnHelp);
             this.Controls.Add(this.btnSearch);
             this.Controls.Add(this.circleLoading);
             this.Controls.Add(this.btnRetry);

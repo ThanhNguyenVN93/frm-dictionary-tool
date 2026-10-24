@@ -74,6 +74,9 @@ namespace DictionaryTool.UI
         public static string TipInfo            => IsVietnamese
             ? "Giới thiệu · Góp ý · Đóng góp"
             : "About · Feedback · Donate";
+        public static string TipHelp            => IsVietnamese
+            ? "Hướng dẫn sử dụng"
+            : "How to use";
         public static string TipSearch          => IsVietnamese
             ? "Tra nghĩa của từ đã nhập (Enter)"
             : "Look up the entered word (Enter)";

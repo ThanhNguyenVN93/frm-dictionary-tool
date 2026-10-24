@@ -89,6 +89,9 @@
     <Compile Include="DonateForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="HelpForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="UiPalette.cs" />
     <Compile Include="UiStrings.cs" />
