@@ -48,11 +48,22 @@ namespace DictionaryTool.Core.Repositories
             return Path.Combine(appData, "DictionaryTool", "trilingual.db");
         }
 
+        private SQLiteConnection OpenConnection()
+        {
+            var connection = new SQLiteConnection(_connectionString);
+            connection.Open();
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;";
+                cmd.ExecuteNonQuery();
+            }
+            return connection;
+        }
+
         private void EnsureCreated()
         {
-            using (var connection = new SQLiteConnection(_connectionString))
+            using (var connection = OpenConnection())
             {
-                connection.Open();
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
@@ -80,10 +91,8 @@ namespace DictionaryTool.Core.Repositories
         {
             return Task.Run(() =>
             {
-                using (var connection = new SQLiteConnection(_connectionString))
+                using (var connection = OpenConnection())
                 {
-                    connection.Open();
-
                     using (var checkCommand = connection.CreateCommand())
                     {
                         checkCommand.CommandText = "SELECT COUNT(*) FROM CcCedict;";
@@ -166,9 +175,8 @@ namespace DictionaryTool.Core.Repositories
 
             return Task.Run(() =>
             {
-                using (var connection = new SQLiteConnection(_connectionString))
+                using (var connection = OpenConnection())
                 {
-                    connection.Open();
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"
@@ -188,9 +196,8 @@ namespace DictionaryTool.Core.Repositories
 
             return Task.Run(() =>
             {
-                using (var connection = new SQLiteConnection(_connectionString))
+                using (var connection = OpenConnection())
                 {
-                    connection.Open();
                     using (var command = connection.CreateCommand())
                     {
                         // Lấy nhiều ứng viên rồi xếp hạng trong code (xem ScoreGlossMatch) thay vì
@@ -250,10 +257,12 @@ namespace DictionaryTool.Core.Repositories
 
         /// <summary>
         /// Chấm điểm mức độ khớp của 1 entry CC-CEDICT với từ tiếng Anh cần tra ngược:
-        /// 2 = có 1 gloss trùng khớp gần như hoàn toàn với từ cần tra (sau khi bỏ phần
-        ///     chú thích trong ngoặc, vd "cat (CL:隻|只[zhi1])" khớp "cat");
+        /// 3 = gloss khớp hoàn toàn với từ cần tra VÀ không có chú thích trong ngoặc
+        ///     (nghĩa chính, phổ biến — vd 學生 "pupil" không ngoặc);
+        /// 2 = gloss khớp hoàn toàn nhưng có chú thích trong ngoặc làm hẹp nghĩa
+        ///     (vd 眸 "pupil (of the eye)" — đúng token nhưng nghĩa chuyên biệt);
         /// 1 = chỉ khớp 1 token rời rạc bên trong gloss dài hơn (vd "sound for calling a cat");
-        /// 0 = không khớp (không nên xảy ra vì đã lọc qua token index).
+        /// 0 = không khớp.
         /// </summary>
         private static int ScoreGlossMatch(string[] glosses, string token)
         {
@@ -265,9 +274,12 @@ namespace DictionaryTool.Core.Repositories
 
                 if (string.Equals(firstClause, token, StringComparison.OrdinalIgnoreCase))
                 {
-                    return 2;
+                    if (!gloss.Contains('('))
+                        return 3; // primary meaning, no qualifier — max score
+                    if (best < 2)
+                        best = 2;
                 }
-                if (best < 1)
+                else if (best < 1)
                 {
                     best = 1;
                 }
