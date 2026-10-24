@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using DictionaryTool.Core.Clients;
 using DictionaryTool.Core.Models;
 using DictionaryTool.Core.Repositories;
 
@@ -22,17 +23,20 @@ namespace DictionaryTool.Core
         private readonly ICcCedictRepository _cedictRepository;
         private readonly IStardictRepository _stardictRepository;
         private readonly ITatoebaRepository _tatoebaRepository;
+        private readonly GoogleTranslateClient _googleTranslateClient;
 
         public TrilingualLookupService(
             IDictionaryService dictionaryService,
             ICcCedictRepository cedictRepository,
             IStardictRepository stardictRepository,
-            ITatoebaRepository tatoebaRepository)
+            ITatoebaRepository tatoebaRepository,
+            GoogleTranslateClient googleTranslateClient = null)
         {
             _dictionaryService = dictionaryService ?? throw new ArgumentNullException(nameof(dictionaryService));
             _cedictRepository = cedictRepository ?? throw new ArgumentNullException(nameof(cedictRepository));
             _stardictRepository = stardictRepository ?? throw new ArgumentNullException(nameof(stardictRepository));
             _tatoebaRepository = tatoebaRepository ?? throw new ArgumentNullException(nameof(tatoebaRepository));
+            _googleTranslateClient = googleTranslateClient;
         }
 
         public async Task<TrilingualResult> LookupAsync(string query, Language? languageHint = null, CancellationToken ct = default(CancellationToken))
@@ -186,6 +190,16 @@ namespace DictionaryTool.Core
                     entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(lastWord.ToLowerInvariant()).ConfigureAwait(false);
                     if (!entry.NotFound) return entry;
                 }
+            }
+
+            // Bước 6: fallback online — Google Translate (không cần API key).
+            // Chỉ dùng khi tất cả nguồn offline thất bại, nên không ảnh hưởng tốc độ
+            // tra những từ đã có trong StarDict.
+            if (_googleTranslateClient != null)
+            {
+                var translations = await _googleTranslateClient.TranslateViToEnAsync(trimmed).ConfigureAwait(false);
+                if (translations.Count > 0)
+                    return new StardictEntry { Word = trimmed, Definitions = translations, NotFound = false };
             }
 
             return new StardictEntry { Word = trimmed, NotFound = true };
