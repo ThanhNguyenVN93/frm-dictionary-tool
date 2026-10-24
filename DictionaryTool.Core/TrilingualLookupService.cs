@@ -214,7 +214,9 @@ namespace DictionaryTool.Core
         private static readonly HashSet<string> BridgeWordStopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "a", "an", "the", "to", "of", "in", "on", "at", "is", "be", "to", "this", "that",
-            "and", "or", "as", "it", "its", "for", "with", "by"
+            "and", "or", "as", "it", "its", "for", "with", "by",
+            // Quá chung chung — không dùng được làm bridge word có nghĩa
+            "man", "woman", "boy", "girl", "one", "type", "kind", "form", "way", "used"
         };
 
         /// <summary>
@@ -226,18 +228,33 @@ namespace DictionaryTool.Core
         /// </summary>
         private static string ExtractBridgeWord(IEnumerable<string> definitions)
         {
+            // Ưu tiên từ ngắn nhất trong phạm vi 3-12 ký tự (thường chung chung hơn,
+            // cho kết quả tra tốt hơn). Vd "cô giáo" → "kindergartener;governess;...
+            // teacher..." → "teacher" (7) thay vì "kindergartener" (14).
+            // "học sinh" → "Schoolboy,schoolgirl,pupil" → "pupil" (5) thay vì "Schoolboy" (9).
+            string best = null;
+            int bestLen = int.MaxValue;
+
             foreach (var definition in definitions)
             {
                 foreach (Match match in BridgeWordRegex.Matches(definition))
                 {
-                    if (match.Value.Length < 2 || BridgeWordStopWords.Contains(match.Value))
-                    {
+                    var word = match.Value;
+                    if (word.Length < 3 || BridgeWordStopWords.Contains(word))
                         continue;
+
+                    if (word.Length <= 12 && word.Length < bestLen)
+                    {
+                        bestLen = word.Length;
+                        best = word.ToLowerInvariant();
                     }
-                    return match.Value.ToLowerInvariant();
+                    else if (best == null)
+                    {
+                        best = word.ToLowerInvariant(); // fallback: chỉ có từ dài
+                    }
                 }
             }
-            return null;
+            return best;
         }
     }
 }

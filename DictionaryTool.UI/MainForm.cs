@@ -848,9 +848,13 @@ namespace DictionaryTool.UI
                 return;
             }
 
-            lblViWord.Text = result.Word;
+            // result.Word là từ tiếng Việt khi tra VI→EN/ZH, hoặc là từ tiếng Anh
+            // (key headword) khi tra EN→VI. Chỉ hiển thị làm heading và thêm TTS khi
+            // đây thực sự là từ tiếng Việt (có dấu hoặc bắt đầu bằng cụm VI).
+            bool wordIsVietnamese = LanguageDetector.Detect(result.Word ?? string.Empty) == Language.Vietnamese;
+            lblViWord.Text = wordIsVietnamese ? result.Word : "—";
 
-            if (!string.IsNullOrWhiteSpace(result.Word))
+            if (wordIsVietnamese && !string.IsNullOrWhiteSpace(result.Word))
                 pnlViDefinitions.Controls.Add(CreateTtsButtonRow(result.Word, "vi"));
 
             foreach (var definition in result.Definitions)
