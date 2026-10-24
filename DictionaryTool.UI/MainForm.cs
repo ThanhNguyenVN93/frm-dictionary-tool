@@ -989,7 +989,8 @@ namespace DictionaryTool.UI
                     iconButton.ShadowDecoration.Enabled = false;
 
                     var audioUrl = phonetic.AudioUrl;
-                    iconButton.Click += async (s, e) => await PlayAudioAsync(audioUrl).ConfigureAwait(true);
+                    var capturedBtn = iconButton;
+                    iconButton.Click += async (s, e) => await PlayAudioAsync(audioUrl, capturedBtn).ConfigureAwait(true);
 
                     innerRow.Controls.Add(iconButton);
                 }
@@ -1130,8 +1131,9 @@ namespace DictionaryTool.UI
             };
         }
 
-        private async Task PlayAudioAsync(string audioUrl)
+        private async Task PlayAudioAsync(string audioUrl, Guna.UI2.WinForms.Guna2Button btn = null)
         {
+            if (btn != null) btn.FillColor = UiPalette.Accent;
             try
             {
                 var data = await _audioCacheRepository.GetOrDownloadAsync(audioUrl).ConfigureAwait(true);
@@ -1140,18 +1142,23 @@ namespace DictionaryTool.UI
                 using (var reader = new Mp3FileReader(ms))
                 using (var outputDevice = new WaveOutEvent())
                 {
+                    var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                    outputDevice.PlaybackStopped += (s, e) => tcs.TrySetResult(true);
                     outputDevice.Init(reader);
                     outputDevice.Play();
-
-                    while (outputDevice.PlaybackState == PlaybackState.Playing)
-                    {
-                        await Task.Delay(100).ConfigureAwait(true);
-                    }
+                    // Timeout 15s để tránh treo nếu PlaybackStopped không fire
+                    await System.Threading.Tasks.Task.WhenAny(
+                        tcs.Task, System.Threading.Tasks.Task.Delay(15000)).ConfigureAwait(true);
                 }
             }
             catch (Exception)
             {
                 // Lỗi mạng/404/định dạng audio không được làm crash UI (spec 3.2).
+            }
+            finally
+            {
+                if (btn != null && !btn.IsDisposed)
+                    btn.FillColor = UiPalette.AccentSoft;
             }
         }
 

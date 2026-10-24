@@ -20,6 +20,14 @@ namespace DictionaryTool.Core
             @"[àáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Chỉ thử probe VI khi từ có ký hiệu điển hình của tiếng Việt gõ không dấu:
+        // "kh" (khong, khe…), hoặc bắt đầu bằng "ng"/"nh"/"ngh" (nguoi, nhau…).
+        // Các từ ASCII thuần không có dấu hiệu này (vd "run", "love") giữ nguyên EN
+        // để tránh nhầm với những từ tồn tại trong cả hai ngôn ngữ.
+        private static readonly Regex AsciiVietnameseMarkerRegex = new Regex(
+            @"^(ng|nh|ngh)|kh",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         public static Language Detect(string input)
         {
             if (string.IsNullOrWhiteSpace(input))
@@ -51,9 +59,12 @@ namespace DictionaryTool.Core
             var quick = Detect(input);
 
             if (quick != Language.English || vietnameseIndexProbe == null)
-            {
                 return quick;
-            }
+
+            // Chỉ probe khi có dấu hiệu từ tiếng Việt gõ không dấu — tránh nhầm
+            // những từ đồng dạng ASCII như "run" (cũng là từ tiếng Việt trong StarDict).
+            if (!AsciiVietnameseMarkerRegex.IsMatch(input.Trim()))
+                return Language.English;
 
             var isKnownVietnamese = await vietnameseIndexProbe(input.Trim()).ConfigureAwait(false);
             return isKnownVietnamese ? Language.Vietnamese : Language.English;
