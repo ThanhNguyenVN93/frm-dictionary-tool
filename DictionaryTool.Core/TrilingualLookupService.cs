@@ -161,6 +161,19 @@ namespace DictionaryTool.Core
                 }
             }
 
+            // Bước 5: cụm từ nhiều chữ (vd "xin chào") không có entry nguyên vẹn —
+            // thử từ cuối cùng làm từ khoá chính (tiếng Việt thường đặt từ chính sau).
+            if (trimmed.Contains(" "))
+            {
+                var lastWord = trimmed.Substring(trimmed.LastIndexOf(' ') + 1);
+                entry = await _stardictRepository.LookupViEnAsync(lastWord).ConfigureAwait(false);
+                if (!entry.NotFound) return entry;
+
+                var lastWordNoDiacritics = VietnameseNormalizer.StripDiacritics(lastWord).ToLowerInvariant();
+                entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(lastWordNoDiacritics).ConfigureAwait(false);
+                if (!entry.NotFound) return entry;
+            }
+
             return new StardictEntry { Word = trimmed, NotFound = true };
         }
 

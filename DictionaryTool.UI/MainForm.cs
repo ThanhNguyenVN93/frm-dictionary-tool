@@ -849,6 +849,10 @@ namespace DictionaryTool.UI
             }
 
             lblViWord.Text = result.Word;
+
+            if (!string.IsNullOrWhiteSpace(result.Word))
+                pnlViDefinitions.Controls.Add(CreateTtsButtonRow(result.Word, "vi"));
+
             foreach (var definition in result.Definitions)
             {
                 pnlViDefinitions.Controls.Add(CreateBulletLabel(definition));
@@ -871,6 +875,9 @@ namespace DictionaryTool.UI
                 ? result.Simplified
                 : $"{result.Simplified} ({result.Traditional})";
             lblZhPinyin.Text = result.Pinyin;
+
+            if (!string.IsNullOrWhiteSpace(result.Simplified))
+                pnlZhDefinitions.Controls.Add(CreateTtsButtonRow(result.Simplified, "zh-CN"));
 
             foreach (var definition in result.Definitions)
             {
@@ -1178,6 +1185,53 @@ namespace DictionaryTool.UI
             {
                 return false;
             }
+        }
+
+        private async Task PlayTtsAsync(string word, string langCode, Guna.UI2.WinForms.Guna2Button btn = null)
+        {
+            if (btn != null) btn.FillColor = UiPalette.Accent;
+            try
+            {
+                var encoded = Uri.EscapeDataString(word.Trim());
+                var ttsUrl = $"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl={langCode}&client=tw-ob";
+                await TryPlayFromUrlAsync(ttsUrl).ConfigureAwait(true);
+            }
+            finally
+            {
+                if (btn != null && !btn.IsDisposed)
+                    btn.FillColor = UiPalette.AccentSoft;
+            }
+        }
+
+        private Control CreateTtsButtonRow(string word, string langCode)
+        {
+            var row = new FlickerFreeFlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 0, 6)
+            };
+            var btn = new Guna.UI2.WinForms.Guna2Button
+            {
+                Text = "🔊",
+                AutoSize = true,
+                Padding = new Padding(0),
+                Font = new Font("Segoe UI", 10F),
+                FillColor = UiPalette.AccentSoft,
+                ForeColor = UiPalette.Accent,
+                BorderRadius = 14,
+                Cursor = Cursors.Hand
+            };
+            btn.HoverState.FillColor = UiPalette.AccentSoft;
+            btn.ShadowDecoration.Enabled = false;
+            var capturedWord = word;
+            var capturedLang = langCode;
+            var capturedBtn = btn;
+            btn.Click += async (s, e) => await PlayTtsAsync(capturedWord, capturedLang, capturedBtn).ConfigureAwait(true);
+            row.Controls.Add(btn);
+            return row;
         }
 
         private void LoadSettings()
