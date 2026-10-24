@@ -78,6 +78,19 @@ namespace DictionaryTool.Core
                     // English hoặc Unknown: coi như tra tiếng Anh (spec "EN: mặc định nếu không phải ZH/VI").
                     result.DetectedLanguage = Language.English;
                     await LookupFromEnglishAsync(trimmed, result, ct).ConfigureAwait(false);
+
+                    // Fallback: nếu MW hoàn toàn không tìm thấy (vd "anh" gõ không
+                    // flag VI), kiểm tra xem có phải từ tiếng Việt trong StarDict không.
+                    // "run" không trigger vì MW trả về kết quả → NotFound = false.
+                    if (result.EnglishResult.NotFound)
+                    {
+                        var viProbe = await _stardictRepository.LookupViEnAsync(trimmed).ConfigureAwait(false);
+                        if (!viProbe.NotFound)
+                        {
+                            result = new TrilingualResult { Query = trimmed, DetectedLanguage = Language.Vietnamese };
+                            await LookupFromVietnameseAsync(trimmed, result, ct).ConfigureAwait(false);
+                        }
+                    }
                     break;
             }
 
@@ -262,8 +275,9 @@ namespace DictionaryTool.Core
             "say", "have", "make", "take", "give", "get", "put", "set", "let", "see",
             "try", "ask", "pay", "cut", "eat", "sit", "win", "buy", "run", "add",
             "call", "come", "back", "turn", "show", "keep", "hold", "fall", "feel",
-            // Quá chung chung — không dùng được làm bridge word có nghĩa
-            "man", "woman", "boy", "girl", "one", "type", "kind", "form", "way", "used"
+            // Quá chung chung hoặc sai nghĩa khi dùng làm bridge word
+            "man", "woman", "boy", "girl", "one", "type", "kind", "form", "way", "used",
+            "dame", "miss", "mistress", "lord", "lady", "sir", "madam", "mister"
         };
 
         /// <summary>
@@ -275,13 +289,16 @@ namespace DictionaryTool.Core
         /// </summary>
         private static string ExtractBridgeWord(IEnumerable<string> definitions)
         {
-            // Ưu tiên từ ngắn nhất trong phạm vi 3-12 ký tự (thường chung chung hơn,
-            // cho kết quả tra tốt hơn). Vd "cô giáo" → "kindergartener;governess;...
-            // teacher..." → "teacher" (7) thay vì "kindergartener" (14).
-            // "học sinh" → "Schoolboy,schoolgirl,pupil" → "pupil" (5) thay vì "Schoolboy" (9).
+            // Score = defIndex * 100 + wordLen: ưu tiên definition đầu tiên,
+            // dùng độ dài làm tiebreaker bên trong cùng 1 definition.
+            // Vd "cô giáo" → def0:"teacher"(7) score=7, def2:"dame"(4) score=204
+            //    → teacher thắng dù dài hơn vì ở definition đầu.
+            // Vd "học sinh" → def0:"Schoolboy,schoolgirl,pupil" → pupil(5) score=5 thắng.
             string best = null;
-            int bestLen = int.MaxValue;
+            int bestScore = int.MaxValue;
+            string fallback = null; // từ dài hơn 12 nếu không có gì khác
 
+            var defIndex = 0;
             foreach (var definition in definitions)
             {
                 foreach (Match match in BridgeWordRegex.Matches(definition))
@@ -290,18 +307,23 @@ namespace DictionaryTool.Core
                     if (word.Length < 3 || BridgeWordStopWords.Contains(word))
                         continue;
 
-                    if (word.Length <= 12 && word.Length < bestLen)
+                    if (word.Length <= 12)
                     {
-                        bestLen = word.Length;
-                        best = word.ToLowerInvariant();
+                        var score = defIndex * 100 + word.Length;
+                        if (score < bestScore)
+                        {
+                            bestScore = score;
+                            best = word.ToLowerInvariant();
+                        }
                     }
-                    else if (best == null)
+                    else if (fallback == null)
                     {
-                        best = word.ToLowerInvariant(); // fallback: chỉ có từ dài
+                        fallback = word.ToLowerInvariant();
                     }
                 }
+                defIndex++;
             }
-            return best;
+            return best ?? fallback;
         }
     }
 }
