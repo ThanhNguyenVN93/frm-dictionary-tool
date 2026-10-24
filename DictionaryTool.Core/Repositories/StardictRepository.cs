@@ -45,11 +45,22 @@ namespace DictionaryTool.Core.Repositories
             EnsureCreated();
         }
 
+        private SQLiteConnection OpenConnection()
+        {
+            var connection = new SQLiteConnection(_connectionString);
+            connection.Open();
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;";
+                cmd.ExecuteNonQuery();
+            }
+            return connection;
+        }
+
         private void EnsureCreated()
         {
-            using (var connection = new SQLiteConnection(_connectionString))
+            using (var connection = OpenConnection())
             {
-                connection.Open();
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
@@ -149,10 +160,8 @@ namespace DictionaryTool.Core.Repositories
         {
             return Task.Run(() =>
             {
-                using (var connection = new SQLiteConnection(_connectionString))
+                using (var connection = OpenConnection())
                 {
-                    connection.Open();
-
                     ImportIfEmpty(connection, "StardictEnVi", _enViIdxPath, _enViDictDzPath, progress, "Anh-Việt");
                     ImportIfEmpty(connection, "StardictViEn", _viEnIdxPath, _viEnDictDzPath, progress, "Việt-Anh");
                 }
@@ -300,9 +309,8 @@ namespace DictionaryTool.Core.Repositories
 
             return Task.Run(() =>
             {
-                using (var connection = new SQLiteConnection(_connectionString))
+                using (var connection = OpenConnection())
                 {
-                    connection.Open();
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"
@@ -333,9 +341,8 @@ namespace DictionaryTool.Core.Repositories
 
             return Task.Run(() =>
             {
-                using (var connection = new SQLiteConnection(_connectionString))
+                using (var connection = OpenConnection())
                 {
-                    connection.Open();
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = "SELECT DefinitionsJson FROM " + table + " WHERE Word = @word;";

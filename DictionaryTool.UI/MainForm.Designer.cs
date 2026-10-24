@@ -748,22 +748,22 @@ namespace DictionaryTool.UI
             this.lblUsage.Name = "lblUsage";
             this.lblUsage.Size = new System.Drawing.Size(0, 13);
             this.lblUsage.TabIndex = 14;
-            //
+            // 
             // btnHelp
-            //
+            // 
             this.btnHelp.BorderRadius = 8;
+            this.btnHelp.Cursor = System.Windows.Forms.Cursors.Hand;
             this.btnHelp.FillColor = System.Drawing.Color.Transparent;
-            this.btnHelp.HoverState.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(46)))), ((int)(((byte)(50)))), ((int)(((byte)(61)))));
-            this.btnHelp.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(156)))), ((int)(((byte)(163)))), ((int)(((byte)(175)))));
             this.btnHelp.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.btnHelp.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(156)))), ((int)(((byte)(163)))), ((int)(((byte)(175)))));
+            this.btnHelp.HoverState.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(46)))), ((int)(((byte)(50)))), ((int)(((byte)(61)))));
             this.btnHelp.Location = new System.Drawing.Point(942, 622);
             this.btnHelp.Name = "btnHelp";
             this.btnHelp.Size = new System.Drawing.Size(34, 24);
             this.btnHelp.TabIndex = 20;
             this.btnHelp.Text = "?";
-            this.btnHelp.Cursor = System.Windows.Forms.Cursors.Hand;
             this.btnHelp.Click += new System.EventHandler(this.btnHelp_Click);
-            //
+            // 
             // debounceTimer
             // 
             this.debounceTimer.Interval = 450;
