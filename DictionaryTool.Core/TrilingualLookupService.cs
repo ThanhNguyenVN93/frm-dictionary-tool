@@ -140,24 +140,32 @@ namespace DictionaryTool.Core
                 }
             }
 
-            // Bước 3: tra theo index đã bỏ dấu sẵn (WordNoDiacritics) — áp dụng cho cả
-            // input gõ không dấu ("khong") lẫn input có dấu nhưng gõ sai/thiếu dấu,
-            // nên KHÔNG bỏ qua bước này chỉ vì bỏ dấu input không đổi gì (đó chính
-            // xác là trường hợp cần xử lý).
-            var noDiacritics = VietnameseNormalizer.StripDiacritics(trimmed).ToLowerInvariant();
-            entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(noDiacritics).ConfigureAwait(false);
-            if (!entry.NotFound)
-            {
-                return entry;
-            }
+            // Bước 3-4: tra theo index đã bỏ dấu (WordNoDiacritics) — CHỈ khi input là
+            // ASCII thuần (không có dấu tiếng Việt). Nếu input đã có dấu thì bỏ dấu
+            // rồi tra lại có thể nhầm sang từ khác thanh điệu: "bàn học" → "ban hoc"
+            // → khớp "bạn học" (classmate) thay vì "bàn học" (desk). Use case đúng
+            // của bước này là gõ không dấu: "khong" → "không", "ban" → "bàn/bạn/bán".
+            var inputIsAscii = string.Equals(
+                VietnameseNormalizer.StripDiacritics(trimmed), trimmed,
+                StringComparison.OrdinalIgnoreCase);
 
-            if (withoutClassifier != null)
+            if (inputIsAscii)
             {
-                var withoutClassifierNoDiacritics = VietnameseNormalizer.StripDiacritics(withoutClassifier).ToLowerInvariant();
-                entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(withoutClassifierNoDiacritics).ConfigureAwait(false);
+                var noDiacritics = trimmed.ToLowerInvariant();
+                entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(noDiacritics).ConfigureAwait(false);
                 if (!entry.NotFound)
                 {
                     return entry;
+                }
+
+                if (withoutClassifier != null)
+                {
+                    var withoutClassifierNoDiacritics = VietnameseNormalizer.StripDiacritics(withoutClassifier).ToLowerInvariant();
+                    entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(withoutClassifierNoDiacritics).ConfigureAwait(false);
+                    if (!entry.NotFound)
+                    {
+                        return entry;
+                    }
                 }
             }
 
@@ -169,9 +177,15 @@ namespace DictionaryTool.Core
                 entry = await _stardictRepository.LookupViEnAsync(lastWord).ConfigureAwait(false);
                 if (!entry.NotFound) return entry;
 
-                var lastWordNoDiacritics = VietnameseNormalizer.StripDiacritics(lastWord).ToLowerInvariant();
-                entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(lastWordNoDiacritics).ConfigureAwait(false);
-                if (!entry.NotFound) return entry;
+                // No-diacritics cho từ cuối cũng chỉ khi nó là ASCII thuần
+                var lastWordIsAscii = string.Equals(
+                    VietnameseNormalizer.StripDiacritics(lastWord), lastWord,
+                    StringComparison.OrdinalIgnoreCase);
+                if (lastWordIsAscii)
+                {
+                    entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(lastWord.ToLowerInvariant()).ConfigureAwait(false);
+                    if (!entry.NotFound) return entry;
+                }
             }
 
             return new StardictEntry { Word = trimmed, NotFound = true };
