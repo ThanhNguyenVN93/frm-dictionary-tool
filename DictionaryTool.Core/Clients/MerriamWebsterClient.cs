@@ -34,40 +34,32 @@ namespace DictionaryTool.Core.Clients
             _usageTracker = usageTracker;
         }
 
-        public Task<List<MwMeaning>> GetCollegiateAsync(string word, CancellationToken ct = default(CancellationToken))
+        public Task<MwCollegiateResult> GetCollegiateAsync(string word, CancellationToken ct = default(CancellationToken))
         {
-            return GetAsync(CollegiateBaseUrl, _collegiateApiKey, "Collegiate", word, ct);
+            return GetCollegiateInternalAsync(CollegiateBaseUrl, _collegiateApiKey, word, ct);
         }
 
         public Task<List<MwMeaning>> GetLearnerAsync(string word, CancellationToken ct = default(CancellationToken))
         {
-            return GetAsync(LearnerBaseUrl, _learnerApiKey, "Learner's", word, ct);
+            return GetLearnerInternalAsync(LearnerBaseUrl, _learnerApiKey, word, ct);
         }
 
-        private async Task<List<MwMeaning>> GetAsync(string baseUrl, string apiKey, string sourceLabel, string word, CancellationToken ct)
+        private async Task<MwCollegiateResult> GetCollegiateInternalAsync(string baseUrl, string apiKey, string word, CancellationToken ct)
         {
+            var result = new MwCollegiateResult();
+
             if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                // Key chưa được cấu hình -> coi như nguồn này không có dữ liệu, không gọi
-                // API (tránh tốn quota với key rỗng/không hợp lệ) và không throw.
-                return new List<MwMeaning>();
-            }
+                return result;
 
             var url = baseUrl + WebUtility.UrlEncode(word) + "?key=" + WebUtility.UrlEncode(apiKey);
 
             if (_usageTracker != null)
-            {
-                // Chỉ đếm khi thực sự gửi request lên MW (key hợp lệ, không phải cache
-                // hit — cache hit không bao giờ chạy tới đây).
-                await _usageTracker.IncrementAsync(sourceLabel, ct).ConfigureAwait(false);
-            }
+                await _usageTracker.IncrementAsync("Collegiate", ct).ConfigureAwait(false);
 
             using (var response = await _httpClient.GetAsync(url, ct).ConfigureAwait(false))
             {
                 if (response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    return new List<MwMeaning>();
-                }
+                    return result;
 
                 response.EnsureSuccessStatusCode();
 
@@ -75,38 +67,91 @@ namespace DictionaryTool.Core.Clients
                 var token = JToken.Parse(json);
 
                 if (token.Type != JTokenType.Array)
-                {
-                    return new List<MwMeaning>();
-                }
+                    return result;
 
                 var array = (JArray)token;
-                if (array.Count == 0)
+                if (array.Count == 0 || array[0].Type == JTokenType.String)
+                    return result;
+
+                var entries = array.ToObject<List<CollegiateEntryDto>>();
+                bool audioAdded = false;
+
+                foreach (var entry in entries)
                 {
-                    return new List<MwMeaning>();
+                    if (entry.ShortDefinitions != null && entry.ShortDefinitions.Count > 0)
+                    {
+                        result.Meanings.Add(new MwMeaning
+                        {
+                            PartOfSpeech = entry.FunctionalLabel,
+                            ShortDefinitions = entry.ShortDefinitions,
+                            Source = "Collegiate"
+                        });
+                    }
+
+                    if (!audioAdded && entry.Hwi?.Prs != null)
+                    {
+                        foreach (var pr in entry.Hwi.Prs)
+                        {
+                            var audioFile = pr.Sound?.Audio;
+                            if (string.IsNullOrWhiteSpace(audioFile)) continue;
+
+                            var audioUrl = BuildMwAudioUrl(audioFile);
+                            result.Phonetics.Add(new Phonetic
+                            {
+                                Text = pr.Mw ?? string.Empty,
+                                AudioUrl = audioUrl,
+                                AccentLabel = "US"
+                            });
+                            audioAdded = true;
+                            break;
+                        }
+                    }
                 }
 
-                // Nếu phần tử đầu tiên là string -> đây là mảng gợi ý chính tả, nghĩa là
-                // từ không tồn tại trong từ điển này (spec 2.5), không phải lỗi.
-                if (array[0].Type == JTokenType.String)
-                {
-                    return new List<MwMeaning>();
-                }
+                return result;
+            }
+        }
 
-                var entries = array.ToObject<List<EntryDto>>();
+        private async Task<List<MwMeaning>> GetLearnerInternalAsync(string baseUrl, string apiKey, string word, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+                return new List<MwMeaning>();
+
+            var url = baseUrl + WebUtility.UrlEncode(word) + "?key=" + WebUtility.UrlEncode(apiKey);
+
+            if (_usageTracker != null)
+                await _usageTracker.IncrementAsync("Learner's", ct).ConfigureAwait(false);
+
+            using (var response = await _httpClient.GetAsync(url, ct).ConfigureAwait(false))
+            {
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                    return new List<MwMeaning>();
+
+                response.EnsureSuccessStatusCode();
+
+                var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var token = JToken.Parse(json);
+
+                if (token.Type != JTokenType.Array)
+                    return new List<MwMeaning>();
+
+                var array = (JArray)token;
+                if (array.Count == 0 || array[0].Type == JTokenType.String)
+                    return new List<MwMeaning>();
+
+                var entries = array.ToObject<List<LearnerEntryDto>>();
                 var result = new List<MwMeaning>();
 
                 foreach (var entry in entries)
                 {
                     if (entry.ShortDefinitions == null || entry.ShortDefinitions.Count == 0)
-                    {
                         continue;
-                    }
 
                     result.Add(new MwMeaning
                     {
                         PartOfSpeech = entry.FunctionalLabel,
                         ShortDefinitions = entry.ShortDefinitions,
-                        Source = sourceLabel
+                        Source = "Learner's"
                     });
                 }
 
@@ -114,13 +159,59 @@ namespace DictionaryTool.Core.Clients
             }
         }
 
-        private class EntryDto
+        private static string BuildMwAudioUrl(string audioFilename)
+        {
+            string subdir;
+            if (audioFilename.StartsWith("bix", System.StringComparison.OrdinalIgnoreCase))
+                subdir = "bix";
+            else if (char.IsDigit(audioFilename[0]) || audioFilename[0] == '_')
+                subdir = "number";
+            else
+                subdir = audioFilename[0].ToString().ToLowerInvariant();
+
+            return $"https://media.merriam-webster.com/audio/prons/en/us/mp3/{subdir}/{audioFilename}.mp3";
+        }
+
+        private class CollegiateEntryDto
         {
             [JsonProperty("fl")]
             public string FunctionalLabel { get; set; }
 
             [JsonProperty("shortdef")]
             public List<string> ShortDefinitions { get; set; }
+
+            [JsonProperty("hwi")]
+            public HwiDto Hwi { get; set; }
+        }
+
+        private class LearnerEntryDto
+        {
+            [JsonProperty("fl")]
+            public string FunctionalLabel { get; set; }
+
+            [JsonProperty("shortdef")]
+            public List<string> ShortDefinitions { get; set; }
+        }
+
+        private class HwiDto
+        {
+            [JsonProperty("prs")]
+            public List<PrDto> Prs { get; set; }
+        }
+
+        private class PrDto
+        {
+            [JsonProperty("mw")]
+            public string Mw { get; set; }
+
+            [JsonProperty("sound")]
+            public SoundDto Sound { get; set; }
+        }
+
+        private class SoundDto
+        {
+            [JsonProperty("audio")]
+            public string Audio { get; set; }
         }
     }
 }

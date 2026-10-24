@@ -11,7 +11,7 @@ namespace DictionaryTool.Core.Clients
         /// Trả về danh sách rỗng nếu từ không tồn tại (response là mảng gợi ý chính tả)
         /// hoặc nếu API key chưa được cấu hình. Ném exception nếu lỗi hệ thống/mạng thật sự.
         /// </summary>
-        Task<List<MwMeaning>> GetCollegiateAsync(string word, CancellationToken ct = default(CancellationToken));
+        Task<MwCollegiateResult> GetCollegiateAsync(string word, CancellationToken ct = default(CancellationToken));
 
         Task<List<MwMeaning>> GetLearnerAsync(string word, CancellationToken ct = default(CancellationToken));
     }

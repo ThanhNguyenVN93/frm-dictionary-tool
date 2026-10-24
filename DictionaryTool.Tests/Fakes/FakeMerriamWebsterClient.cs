@@ -39,12 +39,12 @@ namespace DictionaryTool.Tests.Fakes
             return new FakeMerriamWebsterClient(null, null, new InvalidOperationException("Simulated network failure"));
         }
 
-        public Task<List<MwMeaning>> GetCollegiateAsync(string word, CancellationToken ct = default(CancellationToken))
+        public Task<MwCollegiateResult> GetCollegiateAsync(string word, CancellationToken ct = default(CancellationToken))
         {
             CallCount++;
             CollegiateCallCount++;
             if (_exceptionToThrow != null) throw _exceptionToThrow;
-            return Task.FromResult(_collegiate);
+            return Task.FromResult(new MwCollegiateResult { Meanings = _collegiate ?? new List<MwMeaning>() });
         }
 
         public Task<List<MwMeaning>> GetLearnerAsync(string word, CancellationToken ct = default(CancellationToken))

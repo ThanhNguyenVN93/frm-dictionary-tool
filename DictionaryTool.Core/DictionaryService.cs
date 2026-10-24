@@ -73,7 +73,14 @@ namespace DictionaryTool.Core
 
             if (merriamWebsterOutcome.Data != null)
             {
-                result.LearnerMeanings.AddRange(merriamWebsterOutcome.Data);
+                result.LearnerMeanings.AddRange(merriamWebsterOutcome.Data.Meanings);
+
+                // Thêm phonetics từ MW khi dictionaryapi.dev không có audio
+                bool dictApiHasAudio = result.Phonetics.Exists(p => !string.IsNullOrWhiteSpace(p.AudioUrl));
+                if (!dictApiHasAudio && merriamWebsterOutcome.Data.Phonetics.Count > 0)
+                {
+                    result.Phonetics.AddRange(merriamWebsterOutcome.Data.Phonetics);
+                }
             }
 
             bool hasAnyData = result.Phonetics.Count > 0 || result.Meanings.Count > 0 || result.LearnerMeanings.Count > 0;
@@ -107,19 +114,19 @@ namespace DictionaryTool.Core
             }
         }
 
-        private async Task<Outcome<System.Collections.Generic.List<MwMeaning>>> SafeGetMerriamWebsterAsync(string word, CancellationToken ct)
+        private async Task<Outcome<MwCollegiateResult>> SafeGetMerriamWebsterAsync(string word, CancellationToken ct)
         {
             try
             {
                 // Gọi Collegiate trước — nếu có kết quả thì không cần gọi Learner's
                 // (tiết kiệm ~50% quota MW khi từ phổ biến đều có trong Collegiate).
                 var collegiate = await _merriamWebsterClient.GetCollegiateAsync(word, ct).ConfigureAwait(false);
-                if (collegiate.Count > 0)
-                    return Outcome<System.Collections.Generic.List<MwMeaning>>.Success(collegiate);
+                if (collegiate.Meanings.Count > 0 || collegiate.Phonetics.Count > 0)
+                    return Outcome<MwCollegiateResult>.Success(collegiate);
 
                 // Collegiate không có dữ liệu → thử Learner's làm fallback.
                 var learner = await _merriamWebsterClient.GetLearnerAsync(word, ct).ConfigureAwait(false);
-                return Outcome<System.Collections.Generic.List<MwMeaning>>.Success(learner);
+                return Outcome<MwCollegiateResult>.Success(new MwCollegiateResult { Meanings = learner });
             }
             catch (OperationCanceledException)
             {
@@ -127,7 +134,7 @@ namespace DictionaryTool.Core
             }
             catch (Exception)
             {
-                return Outcome<System.Collections.Generic.List<MwMeaning>>.Failure();
+                return Outcome<MwCollegiateResult>.Failure();
             }
         }
 
