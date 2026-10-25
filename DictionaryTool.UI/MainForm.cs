@@ -162,6 +162,14 @@ namespace DictionaryTool.UI
         {
             base.OnLoad(e);
 
+            try
+            {
+                // Dùng icon của exe (app.ico) cho title bar / taskbar / alt-tab.
+                Icon = System.Drawing.Icon.ExtractAssociatedIcon(
+                    System.Reflection.Assembly.GetExecutingAssembly().Location);
+            }
+            catch (Exception) { }
+
             LoadHotkeyFromConfig();
             RegisterCurrentHotKey();
 

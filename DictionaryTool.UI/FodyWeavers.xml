@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
+  <!-- Nhúng tất cả assembly copy-local (managed + native SQLite.Interop) vào exe. -->
+  <Costura>
+    <IncludeDebugSymbols>false</IncludeDebugSymbols>
+  </Costura>
+</Weavers>
