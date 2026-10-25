@@ -1541,7 +1541,8 @@ namespace DictionaryTool.UI
             };
             cmsInfo.Items.Insert(insertAt++, tsmiTheme);
 
-            cmsInfo.Items.Insert(insertAt, new System.Windows.Forms.ToolStripSeparator());
+            // Không thêm separator ở đây: đã có sẵn tsmiSepLang ngay dưới (trước
+            // "Switch to English"), thêm nữa sẽ thành 2 gạch ngang liền nhau.
 
             // Cập nhật số từ đến hạn mỗi lần mở menu.
             cmsInfo.Opening += async (s, e) => await RefreshReviewMenuAsync().ConfigureAwait(true);
@@ -1580,6 +1581,9 @@ namespace DictionaryTool.UI
         private void ApplyTheme(bool light, bool rerender)
         {
             ThemeManager.ApplyTheme(this, light);
+            // Menu dùng ProfessionalColorTable (không phải control nên ThemeManager không
+            // duyệt tới) — gán renderer mới để đọc lại palette hiện tại theo theme.
+            cmsInfo.Renderer = new DarkMenuRenderer();
             // Các control set màu bằng palette trong code cần refresh lại trạng thái.
             UpdateLanguageChipLockState();
             ApplyClipboardButtonState();

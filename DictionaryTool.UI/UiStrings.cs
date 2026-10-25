@@ -12,7 +12,7 @@ namespace DictionaryTool.UI
             : "🔍  Enter an EN / VI / ZH word...";
         public static string BtnSearch          => IsVietnamese ? "Tra từ"     : "Search";
         public static string BtnRetry           => IsVietnamese ? "Thử lại"    : "Retry";
-        public static string BtnMiniModeOff     => IsVietnamese ? "⤢ Mini"     : "⤢ Mini";
+        public static string BtnMiniModeOff     => IsVietnamese ? "⤢ Thu gọn"  : "⤢ Mini";
         public static string BtnMiniModeOn      => IsVietnamese ? "⤢ Đầy đủ"  : "⤢ Full";
         public static string BtnClipboardOn     => IsVietnamese ? "📋 Bật"     : "📋 On";
         public static string BtnClipboardOff    => IsVietnamese ? "📋 Tắt"     : "📋 Off";
