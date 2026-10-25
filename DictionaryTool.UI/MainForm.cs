@@ -1581,8 +1581,10 @@ namespace DictionaryTool.UI
         private void ApplyTheme(bool light, bool rerender)
         {
             ThemeManager.ApplyTheme(this, light);
-            // Menu dùng ProfessionalColorTable (không phải control nên ThemeManager không
-            // duyệt tới) — gán renderer mới để đọc lại palette hiện tại theo theme.
+            // ContextMenuStrip không nằm trong cây Controls nên ThemeManager không duyệt
+            // tới — phải tự set màu nền/chữ + gán renderer mới theo palette hiện tại.
+            cmsInfo.BackColor = UiPalette.CardBackground;
+            cmsInfo.ForeColor = UiPalette.TextPrimary;
             cmsInfo.Renderer = new DarkMenuRenderer();
             // Các control set màu bằng palette trong code cần refresh lại trạng thái.
             UpdateLanguageChipLockState();
