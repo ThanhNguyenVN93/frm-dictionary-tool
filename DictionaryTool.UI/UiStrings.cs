@@ -1,3 +1,5 @@
+using DictionaryTool.Core.Models;
+
 namespace DictionaryTool.UI
 {
     internal static class UiStrings
@@ -108,5 +110,61 @@ namespace DictionaryTool.UI
         public static string MenuAutoSearch     => IsVietnamese
             ? "⏱  Tự động tra"
             : "⏱  Auto-search";
+
+        // --- #2 Ôn tập (SRS) ---
+        public static string MenuReview          => IsVietnamese ? "📚  Ôn tập" : "📚  Review";
+        public static string MenuReviewDue(int n) => IsVietnamese ? $"📚  Ôn tập ({n})" : $"📚  Review ({n})";
+
+        // --- #3 Cỡ chữ ---
+        public static string MenuFontSize        => IsVietnamese ? "🔤  Cỡ chữ" : "🔤  Font size";
+        public static string FontSmall           => IsVietnamese ? "Nhỏ"   : "Small";
+        public static string FontMedium          => IsVietnamese ? "Vừa"   : "Medium";
+        public static string FontLarge           => IsVietnamese ? "Lớn"   : "Large";
+        public static string FontXLarge          => IsVietnamese ? "Rất lớn" : "Extra large";
+
+        // --- #4 Giao diện ---
+        public static string MenuTheme           => IsVietnamese ? "☀️  Giao diện sáng" : "☀️  Light theme";
+
+        // --- #5 Đồng/trái nghĩa ---
+        public static string LabelSynonyms       => IsVietnamese ? "Đồng nghĩa" : "Synonyms";
+        public static string LabelAntonyms       => IsVietnamese ? "Trái nghĩa" : "Antonyms";
+
+        // --- #7 Tách chữ Hán ---
+        public static string SectionCharBreakdown => IsVietnamese ? "TỪNG CHỮ" : "PER CHARACTER";
+
+        // --- #6 Badge nguồn ---
+        public static string SourceLabel(SourceKind kind)
+        {
+            switch (kind)
+            {
+                case SourceKind.OfflineStarDict:        return IsVietnamese ? "📴 StarDict" : "📴 StarDict";
+                case SourceKind.OfflineCcCedict:        return IsVietnamese ? "📴 CC-CEDICT" : "📴 CC-CEDICT";
+                case SourceKind.OnlineDictApi:          return IsVietnamese ? "🌐 Online" : "🌐 Online";
+                case SourceKind.OnlineWiktionary:       return IsVietnamese ? "🌐 Wiktionary" : "🌐 Wiktionary";
+                case SourceKind.OnlineGoogleTranslate:  return IsVietnamese ? "🌐 Google Dịch" : "🌐 Google Translate";
+                case SourceKind.Cache:                  return IsVietnamese ? "💾 Bộ nhớ đệm" : "💾 Cached";
+                default:                                return string.Empty;
+            }
+        }
+
+        // --- ReviewForm ---
+        public static string ReviewTitle         => IsVietnamese ? "Ôn tập từ đã lưu" : "Review bookmarks";
+        public static string ReviewNoneDue       => IsVietnamese
+            ? "🎉 Không có từ nào đến hạn ôn. Quay lại sau nhé!"
+            : "🎉 No words due for review. Come back later!";
+        public static string ReviewShowAnswer    => IsVietnamese ? "Hiện đáp án" : "Show answer";
+        public static string ReviewProgress(int done, int total) => IsVietnamese
+            ? $"Còn lại: {total - done}/{total}"
+            : $"Remaining: {total - done}/{total}";
+        public static string ReviewGradeAgain    => IsVietnamese ? "Quên" : "Again";
+        public static string ReviewGradeHard     => IsVietnamese ? "Khó"  : "Hard";
+        public static string ReviewGradeGood     => IsVietnamese ? "Nhớ"  : "Good";
+        public static string ReviewGradeEasy     => IsVietnamese ? "Dễ"   : "Easy";
+        public static string ReviewOpenInApp     => IsVietnamese ? "Mở tra đầy đủ" : "Open full lookup";
+        public static string ReviewDone          => IsVietnamese ? "Đóng" : "Close";
+        public static string ReviewLoading       => IsVietnamese ? "Đang tải…" : "Loading…";
+        public static string ReviewFinished      => IsVietnamese
+            ? "✅ Hoàn thành phiên ôn tập!"
+            : "✅ Review session complete!";
     }
 }

@@ -10,5 +10,7 @@ namespace DictionaryTool.Core.Models
         public List<string> Definitions { get; set; } = new List<string>();
 
         public bool NotFound { get; set; }
+
+        public SourceKind Source { get; set; } = SourceKind.None;
     }
 }

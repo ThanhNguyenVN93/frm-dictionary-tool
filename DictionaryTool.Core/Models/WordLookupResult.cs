@@ -28,5 +28,8 @@ namespace DictionaryTool.Core.Models
         /// </summary>
         [JsonIgnore]
         public bool NotFound { get; set; }
+
+        [JsonIgnore]
+        public SourceKind Source { get; set; } = SourceKind.None;
     }
 }

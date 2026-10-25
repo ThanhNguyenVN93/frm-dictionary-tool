@@ -104,11 +104,14 @@ namespace DictionaryTool.Core
         private async Task LookupFromEnglishAsync(string word, TrilingualResult result, CancellationToken ct)
         {
             result.EnglishResult = await _dictionaryService.LookupAsync(word, ct).ConfigureAwait(false);
+            TagEnglishSource(result.EnglishResult);
 
             var viEntry = await _stardictRepository.LookupEnViAsync(word).ConfigureAwait(false);
+            if (!viEntry.NotFound) viEntry.Source = SourceKind.OfflineStarDict;
             result.VietnameseResult = ToVietnameseResult(viEntry);
 
             result.ChineseResult = await _cedictRepository.LookupByEnglishAsync(word).ConfigureAwait(false);
+            await TagAndBreakdownChineseAsync(result.ChineseResult).ConfigureAwait(false);
 
             result.ExampleSentences = await _tatoebaRepository.GetExamplesForEnglishAsync(word).ConfigureAwait(false);
         }
@@ -135,8 +138,10 @@ namespace DictionaryTool.Core
                     result.EnglishResult = await _dictionaryService.LookupAsync(bridgeWord, ct).ConfigureAwait(false);
                 }
             }
+            TagEnglishSource(result.EnglishResult);
 
             result.ChineseResult = await _cedictRepository.LookupByEnglishAsync(bridgeWord).ConfigureAwait(false);
+            await TagAndBreakdownChineseAsync(result.ChineseResult).ConfigureAwait(false);
             result.ExampleSentences = await _tatoebaRepository.GetExamplesForEnglishAsync(bridgeWord).ConfigureAwait(false);
         }
 
@@ -159,6 +164,7 @@ namespace DictionaryTool.Core
             var entry = await _stardictRepository.LookupViEnAsync(trimmed).ConfigureAwait(false);
             if (!entry.NotFound)
             {
+                entry.Source = SourceKind.OfflineStarDict;
                 return entry;
             }
 
@@ -168,6 +174,7 @@ namespace DictionaryTool.Core
                 entry = await _stardictRepository.LookupViEnAsync(withoutClassifier).ConfigureAwait(false);
                 if (!entry.NotFound)
                 {
+                    entry.Source = SourceKind.OfflineStarDict;
                     return entry;
                 }
             }
@@ -187,6 +194,7 @@ namespace DictionaryTool.Core
                 entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(noDiacritics).ConfigureAwait(false);
                 if (!entry.NotFound)
                 {
+                    entry.Source = SourceKind.OfflineStarDict;
                     return entry;
                 }
 
@@ -196,6 +204,7 @@ namespace DictionaryTool.Core
                     entry = await _stardictRepository.LookupViEnByNoDiacriticsAsync(withoutClassifierNoDiacritics).ConfigureAwait(false);
                     if (!entry.NotFound)
                     {
+                        entry.Source = SourceKind.OfflineStarDict;
                         return entry;
                     }
                 }
@@ -208,7 +217,11 @@ namespace DictionaryTool.Core
             if (_wiktionaryRepository != null)
             {
                 var wiktEntry = await _wiktionaryRepository.LookupAsync(trimmed).ConfigureAwait(false);
-                if (!wiktEntry.NotFound) return wiktEntry;
+                if (!wiktEntry.NotFound)
+                {
+                    wiktEntry.Source = SourceKind.OnlineWiktionary;
+                    return wiktEntry;
+                }
             }
 
             // Bước 6 (GT): fallback cuối, không cần API key, xử lý tốt cụm từ nhiều âm tiết.
@@ -216,7 +229,7 @@ namespace DictionaryTool.Core
             {
                 var translations = await _googleTranslateClient.TranslateViToEnAsync(trimmed).ConfigureAwait(false);
                 if (translations.Count > 0)
-                    return new StardictEntry { Word = trimmed, Definitions = translations, NotFound = false };
+                    return new StardictEntry { Word = trimmed, Definitions = translations, NotFound = false, Source = SourceKind.OnlineGoogleTranslate };
             }
 
             return new StardictEntry { Word = trimmed, NotFound = true };
@@ -226,6 +239,7 @@ namespace DictionaryTool.Core
         {
             var zhResult = await _cedictRepository.LookupByChineseAsync(word).ConfigureAwait(false);
             result.ChineseResult = zhResult;
+            await TagAndBreakdownChineseAsync(result.ChineseResult).ConfigureAwait(false);
 
             var bridgeWord = zhResult.NotFound ? null : ExtractBridgeWord(zhResult.Definitions.OrderBy(d => d.Length));
             if (bridgeWord == null)
@@ -234,8 +248,10 @@ namespace DictionaryTool.Core
             }
 
             result.EnglishResult = await _dictionaryService.LookupAsync(bridgeWord, ct).ConfigureAwait(false);
+            TagEnglishSource(result.EnglishResult);
 
             var viEntry = await _stardictRepository.LookupEnViAsync(bridgeWord).ConfigureAwait(false);
+            if (!viEntry.NotFound) viEntry.Source = SourceKind.OfflineStarDict;
             result.VietnameseResult = ToVietnameseResult(viEntry);
 
             result.ExampleSentences = await _tatoebaRepository.GetExamplesForEnglishAsync(bridgeWord).ConfigureAwait(false);
@@ -247,8 +263,78 @@ namespace DictionaryTool.Core
             {
                 Word = entry.Word,
                 Definitions = entry.Definitions,
-                NotFound = entry.NotFound
+                NotFound = entry.NotFound,
+                Source = entry.Source
             };
+        }
+
+        /// <summary>Gán nguồn cho EnglishResult (cache vs online) để UI hiện badge.</summary>
+        private static void TagEnglishSource(WordLookupResult en)
+        {
+            if (en == null || en.NotFound || en.HasError) return;
+            en.Source = en.FromCache ? SourceKind.Cache : SourceKind.OnlineDictApi;
+        }
+
+        /// <summary>
+        /// Tách từ Hán ghép thành từng ký tự rồi tra pinyin + nghĩa của mỗi ký tự
+        /// trong CC-CEDICT (#7). Chỉ chạy khi từ có từ 2 ký tự Hán trở lên.
+        /// </summary>
+        /// <summary>Gán nguồn CC-CEDICT (offline) cho ZH và tách ký tự nếu là từ ghép.</summary>
+        private async Task TagAndBreakdownChineseAsync(ChineseResult zh)
+        {
+            if (zh == null || zh.NotFound) return;
+            zh.Source = SourceKind.OfflineCcCedict;
+            await PopulateChineseCharactersAsync(zh).ConfigureAwait(false);
+        }
+
+        private async Task PopulateChineseCharactersAsync(ChineseResult zh)
+        {
+            if (zh == null || zh.NotFound || string.IsNullOrEmpty(zh.Simplified)) return;
+
+            var chars = zh.Simplified;
+            if (CountHanCharacters(chars) < 2) return;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var ch in EnumerateCharacters(chars))
+            {
+                if (!IsHanCharacter(ch) || !seen.Add(ch)) continue;
+
+                var charResult = await _cedictRepository.LookupByChineseAsync(ch).ConfigureAwait(false);
+                if (charResult == null || charResult.NotFound) continue;
+
+                zh.Characters.Add(new ChineseCharacterInfo
+                {
+                    Character = ch,
+                    Pinyin = charResult.Pinyin,
+                    Definitions = charResult.Definitions ?? new List<string>()
+                });
+            }
+        }
+
+        private static int CountHanCharacters(string text)
+        {
+            var count = 0;
+            foreach (var ch in EnumerateCharacters(text))
+                if (IsHanCharacter(ch)) count++;
+            return count;
+        }
+
+        // Dùng StringInfo để không cắt nhầm ký tự Hán nằm ngoài BMP (surrogate pair).
+        private static IEnumerable<string> EnumerateCharacters(string text)
+        {
+            var e = System.Globalization.StringInfo.GetTextElementEnumerator(text ?? string.Empty);
+            while (e.MoveNext())
+                yield return (string)e.Current;
+        }
+
+        private static bool IsHanCharacter(string element)
+        {
+            if (string.IsNullOrEmpty(element)) return false;
+            var cp = char.ConvertToUtf32(element, 0);
+            // CJK Unified Ideographs + Ext A + phần Ext B hay gặp.
+            return (cp >= 0x4E00 && cp <= 0x9FFF)
+                || (cp >= 0x3400 && cp <= 0x4DBF)
+                || (cp >= 0x20000 && cp <= 0x2A6DF);
         }
 
         /// <summary>

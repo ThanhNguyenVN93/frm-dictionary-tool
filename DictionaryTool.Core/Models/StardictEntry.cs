@@ -8,5 +8,8 @@ namespace DictionaryTool.Core.Models
         public string Word { get; set; }
         public List<string> Definitions { get; set; } = new List<string>();
         public bool NotFound { get; set; }
+
+        /// <summary>Nguồn đã trả về entry này (offline StarDict / Wiktionary / Google Translate).</summary>
+        public SourceKind Source { get; set; } = SourceKind.None;
     }
 }

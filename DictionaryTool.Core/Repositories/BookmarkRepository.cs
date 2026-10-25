@@ -4,6 +4,7 @@ using System.Data.SQLite;
 using System.IO;
 using System.Threading.Tasks;
 using DictionaryTool.Core.Models;
+using DictionaryTool.Core.Srs;
 
 namespace DictionaryTool.Core.Repositories
 {
@@ -41,6 +42,30 @@ namespace DictionaryTool.Core.Repositories
                         );";
                     command.ExecuteNonQuery();
                 }
+
+                // Cột SRS thêm sau — dùng ALTER TABLE trong try/catch để không lỗi với
+                // DB cũ đã có bảng Bookmark (bỏ qua nếu cột đã tồn tại).
+                AddColumnIfMissing(connection, "NextReviewUtc", "TEXT");
+                AddColumnIfMissing(connection, "IntervalDays", "INTEGER NOT NULL DEFAULT 0");
+                AddColumnIfMissing(connection, "Ease", "REAL NOT NULL DEFAULT 2.5");
+                AddColumnIfMissing(connection, "Reps", "INTEGER NOT NULL DEFAULT 0");
+                AddColumnIfMissing(connection, "LastReviewedUtc", "TEXT");
+            }
+        }
+
+        private static void AddColumnIfMissing(SQLiteConnection connection, string column, string definition)
+        {
+            try
+            {
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = $"ALTER TABLE Bookmark ADD COLUMN {column} {definition};";
+                    command.ExecuteNonQuery();
+                }
+            }
+            catch (SQLiteException)
+            {
+                // Cột đã tồn tại — bỏ qua.
             }
         }
 
@@ -59,9 +84,10 @@ namespace DictionaryTool.Core.Repositories
                     connection.Open();
                     using (var command = connection.CreateCommand())
                     {
+                        // Bookmark mới đến hạn ôn ngay (NextReviewUtc = thời điểm tạo).
                         command.CommandText = @"
-                            INSERT INTO Bookmark (Query, Language, CreatedAtUtc)
-                            VALUES (@query, @language, @createdAt)
+                            INSERT INTO Bookmark (Query, Language, CreatedAtUtc, NextReviewUtc, IntervalDays, Ease, Reps)
+                            VALUES (@query, @language, @createdAt, @createdAt, 0, 2.5, 0)
                             ON CONFLICT(Query, Language) DO NOTHING;";
                         command.Parameters.AddWithValue("@query", normalized);
                         command.Parameters.AddWithValue("@language", language.ToString());
@@ -123,18 +149,13 @@ namespace DictionaryTool.Core.Repositories
                     connection.Open();
                     using (var command = connection.CreateCommand())
                     {
-                        command.CommandText = "SELECT Query, Language, CreatedAtUtc FROM Bookmark ORDER BY CreatedAtUtc DESC;";
+                        command.CommandText = SelectColumns + " ORDER BY CreatedAtUtc DESC;";
 
                         using (var reader = command.ExecuteReader())
                         {
                             while (reader.Read())
                             {
-                                results.Add(new BookmarkEntry
-                                {
-                                    Query = reader.GetString(0),
-                                    Language = ParseLanguage(reader.GetString(1)),
-                                    CreatedAtUtc = DateTime.Parse(reader.GetString(2)).ToUniversalTime()
-                                });
+                                results.Add(MapRow(reader));
                             }
                         }
                     }
@@ -142,6 +163,135 @@ namespace DictionaryTool.Core.Repositories
 
                 return results;
             });
+        }
+
+        public Task<List<BookmarkEntry>> GetDueForReviewAsync(DateTime nowUtc)
+        {
+            var now = nowUtc.ToUniversalTime().ToString("o");
+
+            return Task.Run(() =>
+            {
+                var results = new List<BookmarkEntry>();
+
+                using (var connection = new SQLiteConnection(_connectionString))
+                {
+                    connection.Open();
+                    using (var command = connection.CreateCommand())
+                    {
+                        // NextReviewUtc NULL (dữ liệu cũ) coi như đến hạn ngay.
+                        command.CommandText = SelectColumns +
+                            " WHERE NextReviewUtc IS NULL OR NextReviewUtc <= @now" +
+                            " ORDER BY (NextReviewUtc IS NULL) DESC, NextReviewUtc ASC;";
+                        command.Parameters.AddWithValue("@now", now);
+
+                        using (var reader = command.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                results.Add(MapRow(reader));
+                            }
+                        }
+                    }
+                }
+
+                return results;
+            });
+        }
+
+        public Task<int> GetDueCountAsync(DateTime nowUtc)
+        {
+            var now = nowUtc.ToUniversalTime().ToString("o");
+
+            return Task.Run(() =>
+            {
+                using (var connection = new SQLiteConnection(_connectionString))
+                {
+                    connection.Open();
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = "SELECT COUNT(*) FROM Bookmark WHERE NextReviewUtc IS NULL OR NextReviewUtc <= @now;";
+                        command.Parameters.AddWithValue("@now", now);
+                        return Convert.ToInt32(command.ExecuteScalar());
+                    }
+                }
+            });
+        }
+
+        public Task ApplyReviewAsync(string query, Language language, ReviewGrade grade, DateTime nowUtc)
+        {
+            var normalized = (query ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            return Task.Run(() =>
+            {
+                using (var connection = new SQLiteConnection(_connectionString))
+                {
+                    connection.Open();
+
+                    int intervalDays = 0, reps = 0;
+                    double ease = SrsScheduler.DefaultEase;
+
+                    using (var read = connection.CreateCommand())
+                    {
+                        read.CommandText = "SELECT IntervalDays, Ease, Reps FROM Bookmark WHERE Query = @query AND Language = @language;";
+                        read.Parameters.AddWithValue("@query", normalized);
+                        read.Parameters.AddWithValue("@language", language.ToString());
+                        using (var reader = read.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                intervalDays = reader.IsDBNull(0) ? 0 : Convert.ToInt32(reader.GetValue(0));
+                                ease = reader.IsDBNull(1) ? SrsScheduler.DefaultEase : Convert.ToDouble(reader.GetValue(1));
+                                reps = reader.IsDBNull(2) ? 0 : Convert.ToInt32(reader.GetValue(2));
+                            }
+                            else
+                            {
+                                return; // không còn bookmark này
+                            }
+                        }
+                    }
+
+                    var next = SrsScheduler.Next(intervalDays, ease, reps, grade, nowUtc.ToUniversalTime());
+
+                    using (var write = connection.CreateCommand())
+                    {
+                        write.CommandText = @"
+                            UPDATE Bookmark
+                            SET IntervalDays = @interval, Ease = @ease, Reps = @reps,
+                                NextReviewUtc = @next, LastReviewedUtc = @last
+                            WHERE Query = @query AND Language = @language;";
+                        write.Parameters.AddWithValue("@interval", next.IntervalDays);
+                        write.Parameters.AddWithValue("@ease", next.Ease);
+                        write.Parameters.AddWithValue("@reps", next.Reps);
+                        write.Parameters.AddWithValue("@next", next.NextReviewUtc.ToString("o"));
+                        write.Parameters.AddWithValue("@last", nowUtc.ToUniversalTime().ToString("o"));
+                        write.Parameters.AddWithValue("@query", normalized);
+                        write.Parameters.AddWithValue("@language", language.ToString());
+                        write.ExecuteNonQuery();
+                    }
+                }
+            });
+        }
+
+        private const string SelectColumns =
+            "SELECT Query, Language, CreatedAtUtc, NextReviewUtc, IntervalDays, Ease, Reps, LastReviewedUtc FROM Bookmark";
+
+        private static BookmarkEntry MapRow(SQLiteDataReader reader)
+        {
+            return new BookmarkEntry
+            {
+                Query = reader.GetString(0),
+                Language = ParseLanguage(reader.GetString(1)),
+                CreatedAtUtc = DateTime.Parse(reader.GetString(2)).ToUniversalTime(),
+                NextReviewUtc = reader.IsDBNull(3) ? (DateTime?)null : DateTime.Parse(reader.GetString(3)).ToUniversalTime(),
+                IntervalDays = reader.IsDBNull(4) ? 0 : Convert.ToInt32(reader.GetValue(4)),
+                Ease = reader.IsDBNull(5) ? SrsScheduler.DefaultEase : Convert.ToDouble(reader.GetValue(5)),
+                Reps = reader.IsDBNull(6) ? 0 : Convert.ToInt32(reader.GetValue(6)),
+                LastReviewedUtc = reader.IsDBNull(7) ? (DateTime?)null : DateTime.Parse(reader.GetString(7)).ToUniversalTime()
+            };
         }
 
         private static Language ParseLanguage(string value)
