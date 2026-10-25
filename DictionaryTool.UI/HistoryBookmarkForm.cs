@@ -1,12 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using DictionaryTool.Core.Export;
 using DictionaryTool.Core.Models;
 using DictionaryTool.Core.Repositories;
 using Guna.UI2.WinForms;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace DictionaryTool.UI
 {
@@ -24,6 +28,11 @@ namespace DictionaryTool.UI
 
         private readonly FlickerFreeFlowLayoutPanel _historyList;
         private readonly FlickerFreeFlowLayoutPanel _bookmarkList;
+        private readonly Guna2TextBox _txtFilter;
+
+        // Dữ liệu đã nạp, giữ lại để lọc tại chỗ (không query DB mỗi lần gõ).
+        private List<HistoryEntry> _allHistory = new List<HistoryEntry>();
+        private List<BookmarkEntry> _allBookmarks = new List<BookmarkEntry>();
 
         /// <summary>Raised khi người dùng chọn 1 dòng để tra lại — MainForm nghe sự kiện này.</summary>
         public event Action<string, Language> SearchRequested;
@@ -45,19 +54,34 @@ namespace DictionaryTool.UI
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
 
+            // --- Ô lọc nhanh: lọc đồng thời lịch sử + bookmark theo từ khoá ---
+            _txtFilter = new Guna2TextBox
+            {
+                Location = new Point(20, 14),
+                Size = new Size(660, 34),
+                BorderRadius = 10,
+                Font = new Font("Segoe UI", 10F),
+                PlaceholderText = "🔎 Lọc theo từ…",
+                FillColor = UiPalette.CardBackground,
+                ForeColor = UiPalette.TextPrimary,
+                BorderColor = UiPalette.BorderSoft,
+                PlaceholderForeColor = UiPalette.TextSecondary
+            };
+            _txtFilter.TextChanged += (s, e) => ApplyFilter();
+
             var lblHistoryHeader = new Label
             {
                 Text = "🕘 LỊCH SỬ TRA TỪ",
                 AutoSize = true,
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = UiPalette.TextSecondary,
-                Location = new Point(20, 16)
+                Location = new Point(20, 58)
             };
 
             var pnlHistory = new FlickerFreePanel
             {
-                Location = new Point(20, 46),
-                Size = new Size(320, 370),
+                Location = new Point(20, 86),
+                Size = new Size(320, 330),
                 BorderRadius = 14,
                 FillColor = UiPalette.CardBackground,
                 AutoScroll = true,
@@ -81,13 +105,13 @@ namespace DictionaryTool.UI
                 AutoSize = true,
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = UiPalette.TextSecondary,
-                Location = new Point(360, 16)
+                Location = new Point(360, 58)
             };
 
             var pnlBookmark = new FlickerFreePanel
             {
-                Location = new Point(360, 46),
-                Size = new Size(320, 370),
+                Location = new Point(360, 86),
+                Size = new Size(320, 330),
                 BorderRadius = 14,
                 FillColor = UiPalette.CardBackground,
                 AutoScroll = true,
@@ -107,17 +131,45 @@ namespace DictionaryTool.UI
 
             var btnExport = new Guna2Button
             {
-                Text = "📤 Xuất XLS",
+                Text = "📤 XLS",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                BorderRadius = 14,
+                FillColor = UiPalette.NeutralSoft,
+                ForeColor = UiPalette.TextPrimary,
+                Cursor = Cursors.Hand,
+                Location = new Point(20, 428),
+                Size = new Size(100, 40)
+            };
+            btnExport.HoverState.FillColor = UiPalette.AccentSoftHover;
+            btnExport.Click += async (s, e) => await ExportBookmarksAsync().ConfigureAwait(true);
+
+            var btnBackup = new Guna2Button
+            {
+                Text = "💾 Sao lưu",
                 Font = new Font("Segoe UI", 10F, FontStyle.Bold),
                 BorderRadius = 14,
                 FillColor = UiPalette.Accent,
                 ForeColor = Color.White,
                 Cursor = Cursors.Hand,
-                Location = new Point(20, 428),
+                Location = new Point(128, 428),
                 Size = new Size(130, 40)
             };
-            btnExport.HoverState.FillColor = UiPalette.AccentHover;
-            btnExport.Click += async (s, e) => await ExportBookmarksAsync().ConfigureAwait(true);
+            btnBackup.HoverState.FillColor = UiPalette.AccentHover;
+            btnBackup.Click += async (s, e) => await BackupAsync().ConfigureAwait(true);
+
+            var btnRestore = new Guna2Button
+            {
+                Text = "📥 Phục hồi",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                BorderRadius = 14,
+                FillColor = UiPalette.NeutralSoft,
+                ForeColor = UiPalette.TextPrimary,
+                Cursor = Cursors.Hand,
+                Location = new Point(266, 428),
+                Size = new Size(130, 40)
+            };
+            btnRestore.HoverState.FillColor = UiPalette.AccentSoftHover;
+            btnRestore.Click += async (s, e) => await RestoreAsync().ConfigureAwait(true);
 
             var btnClose = new Guna2Button
             {
@@ -133,11 +185,14 @@ namespace DictionaryTool.UI
             btnClose.HoverState.FillColor = UiPalette.NeutralSoft;
             btnClose.Click += (s, e) => Close();
 
+            Controls.Add(_txtFilter);
             Controls.Add(lblHistoryHeader);
             Controls.Add(pnlHistory);
             Controls.Add(lblBookmarkHeader);
             Controls.Add(pnlBookmark);
             Controls.Add(btnExport);
+            Controls.Add(btnBackup);
+            Controls.Add(btnRestore);
             Controls.Add(btnClose);
 
             Load += async (s, e) => await LoadDataAsync().ConfigureAwait(true);
@@ -151,12 +206,37 @@ namespace DictionaryTool.UI
 
         private async Task LoadHistoryAsync()
         {
-            _historyList.Controls.Clear();
+            _allHistory = await _historyRepository.GetRecentAsync().ConfigureAwait(true);
+            RenderHistory();
+        }
 
-            var items = await _historyRepository.GetRecentAsync().ConfigureAwait(true);
+        private async Task LoadBookmarksAsync()
+        {
+            _allBookmarks = await _bookmarkRepository.GetAllAsync().ConfigureAwait(true);
+            RenderBookmarks();
+        }
+
+        private void ApplyFilter()
+        {
+            RenderHistory();
+            RenderBookmarks();
+        }
+
+        private bool Matches(string query)
+        {
+            var filter = _txtFilter.Text?.Trim();
+            return string.IsNullOrEmpty(filter)
+                || (query ?? string.Empty).IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void RenderHistory()
+        {
+            _historyList.Controls.Clear();
+            var items = _allHistory.Where(i => Matches(i.Query)).ToList();
             if (items.Count == 0)
             {
-                _historyList.Controls.Add(CreateInfoLabel("Chưa có lượt tra nào."));
+                _historyList.Controls.Add(CreateInfoLabel(
+                    _allHistory.Count == 0 ? "Chưa có lượt tra nào." : "Không có mục khớp bộ lọc."));
                 return;
             }
 
@@ -168,14 +248,14 @@ namespace DictionaryTool.UI
             }
         }
 
-        private async Task LoadBookmarksAsync()
+        private void RenderBookmarks()
         {
             _bookmarkList.Controls.Clear();
-
-            var items = await _bookmarkRepository.GetAllAsync().ConfigureAwait(true);
+            var items = _allBookmarks.Where(i => Matches(i.Query)).ToList();
             if (items.Count == 0)
             {
-                _bookmarkList.Controls.Add(CreateInfoLabel("Chưa có bookmark nào."));
+                _bookmarkList.Controls.Add(CreateInfoLabel(
+                    _allBookmarks.Count == 0 ? "Chưa có bookmark nào." : "Không có mục khớp bộ lọc."));
                 return;
             }
 
@@ -225,6 +305,120 @@ namespace DictionaryTool.UI
                 catch (Exception ex)
                 {
                     MessageBox.Show(this, "Không thể ghi file: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        // ---- Sao lưu / phục hồi toàn bộ bookmark + tiến độ ôn tập (SRS) ra JSON ----
+
+        private sealed class BackupFile
+        {
+            public int Version { get; set; } = 1;
+            public string App { get; set; } = "Dictionary Tool";
+            public DateTime ExportedAtUtc { get; set; }
+            public List<BookmarkEntry> Bookmarks { get; set; } = new List<BookmarkEntry>();
+        }
+
+        private static readonly JsonSerializerSettings BackupJsonSettings = new JsonSerializerSettings
+        {
+            Formatting = Formatting.Indented,
+            Converters = { new StringEnumConverter() } // Language lưu dạng chữ cho dễ đọc / bền
+        };
+
+        private async Task BackupAsync()
+        {
+            var bookmarks = await _bookmarkRepository.GetAllAsync().ConfigureAwait(true);
+            if (bookmarks.Count == 0)
+            {
+                MessageBox.Show(this, "Chưa có bookmark nào để sao lưu.", "Sao lưu",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dialog = new SaveFileDialog
+            {
+                Filter = "Dictionary Tool backup (*.json)|*.json",
+                FileName = "dictionary-tool-backup-" + DateTime.Now.ToString("yyyyMMdd") + ".json"
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var backup = new BackupFile { ExportedAtUtc = DateTime.UtcNow, Bookmarks = bookmarks };
+                    var json = JsonConvert.SerializeObject(backup, BackupJsonSettings);
+                    File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false));
+                    MessageBox.Show(this, "Đã sao lưu " + bookmarks.Count + " bookmark (kèm tiến độ ôn tập).",
+                        "Sao lưu", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "Không thể ghi file: " + ex.Message, "Lỗi",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private async Task RestoreAsync()
+        {
+            using (var dialog = new OpenFileDialog
+            {
+                Filter = "Dictionary Tool backup (*.json)|*.json|Tất cả file (*.*)|*.*"
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                BackupFile backup;
+                try
+                {
+                    var json = File.ReadAllText(dialog.FileName);
+                    backup = JsonConvert.DeserializeObject<BackupFile>(json, BackupJsonSettings);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "File sao lưu không hợp lệ: " + ex.Message, "Lỗi",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (backup?.Bookmarks == null || backup.Bookmarks.Count == 0)
+                {
+                    MessageBox.Show(this, "File không chứa bookmark nào.", "Phục hồi",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                // Yes = ghi đè tiến độ của từ trùng; No = chỉ thêm từ mới; Cancel = thôi.
+                var choice = MessageBox.Show(this,
+                    "Tìm thấy " + backup.Bookmarks.Count + " bookmark trong file.\n\n" +
+                    "• Yes: ghi đè tiến độ ôn tập của từ đã có bằng dữ liệu trong file.\n" +
+                    "• No: chỉ thêm từ mới, giữ nguyên tiến độ hiện tại.\n" +
+                    "• Cancel: không làm gì.",
+                    "Phục hồi bookmark", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (choice == DialogResult.Cancel)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var affected = await _bookmarkRepository
+                        .ImportAsync(backup.Bookmarks, overwrite: choice == DialogResult.Yes)
+                        .ConfigureAwait(true);
+                    await LoadBookmarksAsync().ConfigureAwait(true);
+                    MessageBox.Show(this, "Đã phục hồi " + affected + " bookmark.", "Phục hồi",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "Không thể phục hồi: " + ex.Message, "Lỗi",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }

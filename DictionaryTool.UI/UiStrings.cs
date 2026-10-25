@@ -173,5 +173,25 @@ namespace DictionaryTool.UI
         public static string ReviewFinished      => IsVietnamese
             ? "✅ Hoàn thành phiên ôn tập!"
             : "✅ Review session complete!";
+
+        // --- Khay hệ thống (tray) ---
+        public static string TrayOpen         => IsVietnamese ? "Mở" : "Open";
+        public static string TrayCloseToTray  => IsVietnamese ? "Chạy nền ở khay khi đóng" : "Run in tray when closed";
+        public static string TrayExit         => IsVietnamese ? "Thoát" : "Exit";
+
+        // --- Cửa sổ Cài đặt ---
+        public static string MenuSettings        => IsVietnamese ? "⚙️  Cài đặt" : "⚙️  Settings";
+        public static string SettingsTitle       => IsVietnamese ? "Cài đặt" : "Settings";
+        public static string SettingsTheme       => IsVietnamese ? "Giao diện" : "Theme";
+        public static string SettingsThemeLight  => IsVietnamese ? "Sáng" : "Light";
+        public static string SettingsThemeDark   => IsVietnamese ? "Tối"  : "Dark";
+        public static string SettingsFontSize    => IsVietnamese ? "Cỡ chữ" : "Font size";
+        public static string SettingsAutoSearch  => IsVietnamese ? "Tự động tra khi gõ" : "Auto-search while typing";
+        public static string SettingsAutoDelay   => IsVietnamese ? "Độ trễ" : "Delay";
+        public static string SettingsClipboard   => IsVietnamese ? "Tự động tra khi copy ở app khác" : "Auto-search on clipboard copy";
+        public static string SettingsCloseToTray => IsVietnamese ? "Chạy nền ở khay khi đóng cửa sổ" : "Run in tray when window is closed";
+        public static string SettingsHotkey      => IsVietnamese ? "Phím tắt gọi nhanh" : "Global hotkey";
+        public static string SettingsChangeHotkey => IsVietnamese ? "Đổi…" : "Change…";
+        public static string SettingsClose       => IsVietnamese ? "Đóng" : "Close";
     }
 }

@@ -3,6 +3,10 @@ bin/
 obj/
 TestResults/
 
+# Release packaging (built artifacts, không commit binaries)
+installer/release/
+installer/Output/
+
 # Visual Studio
 .vs/
 *.user

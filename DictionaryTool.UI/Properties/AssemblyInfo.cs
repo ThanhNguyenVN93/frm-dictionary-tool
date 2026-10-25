@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("Dictionary Tool")]
-[assembly: AssemblyDescription("Tra từ điển Anh · Việt · Trung trong một cửa sổ (EN / VI / ZH)")]
+[assembly: AssemblyDescription("Look up English, Vietnamese and Chinese words in a single window (EN / VI / ZH)")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("ThanhCode93")]
 [assembly: AssemblyProduct("Dictionary Tool")]

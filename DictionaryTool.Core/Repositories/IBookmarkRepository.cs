@@ -22,5 +22,11 @@ namespace DictionaryTool.Core.Repositories
 
         /// <summary>Ghi nhận 1 lần ôn và tính lịch kế tiếp theo SRS.</summary>
         Task ApplyReviewAsync(string query, Language language, ReviewGrade grade, DateTime nowUtc);
+
+        /// <summary>
+        /// Nhập bookmark từ bản sao lưu (giữ nguyên tiến độ SRS). overwrite=true thì
+        /// ghi đè các từ đã có, false thì chỉ thêm từ mới. Trả về số dòng ảnh hưởng.
+        /// </summary>
+        Task<int> ImportAsync(IEnumerable<BookmarkEntry> entries, bool overwrite);
     }
 }
