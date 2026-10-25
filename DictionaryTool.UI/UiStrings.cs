@@ -7,6 +7,9 @@ namespace DictionaryTool.UI
         public static bool IsVietnamese { get; set; } = true;
 
         // Toolbar
+        public static string SearchPlaceholder  => IsVietnamese
+            ? "🔍  Nhập từ EN / VI / ZH cần tra..."
+            : "🔍  Enter an EN / VI / ZH word...";
         public static string BtnSearch          => IsVietnamese ? "Tra từ"     : "Search";
         public static string BtnRetry           => IsVietnamese ? "Thử lại"    : "Retry";
         public static string BtnMiniModeOff     => IsVietnamese ? "⤢ Mini"     : "⤢ Mini";
@@ -123,7 +126,11 @@ namespace DictionaryTool.UI
         public static string FontXLarge          => IsVietnamese ? "Rất lớn" : "Extra large";
 
         // --- #4 Giao diện ---
-        public static string MenuTheme           => IsVietnamese ? "☀️  Giao diện sáng" : "☀️  Light theme";
+        // Nhãn đổi chiều theo trạng thái hiện tại (giống MenuLangToggle): đang dark →
+        // mời bật sáng; đang light → mời bật tối.
+        public static string MenuTheme(bool isLight) => isLight
+            ? (IsVietnamese ? "🌙  Giao diện tối" : "🌙  Dark theme")
+            : (IsVietnamese ? "☀️  Giao diện sáng" : "☀️  Light theme");
 
         // --- #5 Đồng/trái nghĩa ---
         public static string LabelSynonyms       => IsVietnamese ? "Đồng nghĩa" : "Synonyms";

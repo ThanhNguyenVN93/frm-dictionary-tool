@@ -53,6 +53,7 @@ namespace DictionaryTool.UI
         private System.Windows.Forms.ToolStripMenuItem _tsmiReview;
         private System.Windows.Forms.ToolStripMenuItem _tsmiFont;
         private System.Windows.Forms.ToolStripMenuItem _tsmiTheme;
+        private System.Windows.Forms.ToolStripMenuItem _tsmiAutoSearch;
 
         // Mini mode KHÔNG bỏ cột VI/ZH (lần đầu làm vậy user phản hồi thiếu) — chỉ
         // thu nhỏ cả 3 cột lại. Toạ độ Full lấy đúng từ InitializeComponent, dùng để
@@ -573,6 +574,7 @@ namespace DictionaryTool.UI
 
         private void ApplyUiLanguage()
         {
+            txtSearch.PlaceholderText = UiStrings.SearchPlaceholder;
             btnSearch.Text = UiStrings.BtnSearch;
             btnRetry.Text = UiStrings.BtnRetry;
             btnMiniMode.Text = _isMiniMode ? UiStrings.BtnMiniModeOn : UiStrings.BtnMiniModeOff;
@@ -589,7 +591,8 @@ namespace DictionaryTool.UI
             tsmiLangToggle.Text = UiStrings.MenuLangToggle;
 
             if (_tsmiReview != null) _tsmiReview.Text = UiStrings.MenuReview;
-            if (_tsmiTheme != null) _tsmiTheme.Text = UiStrings.MenuTheme;
+            if (_tsmiAutoSearch != null) _tsmiAutoSearch.Text = UiStrings.MenuAutoSearch;
+            if (_tsmiTheme != null) _tsmiTheme.Text = UiStrings.MenuTheme(_isLightTheme);
             if (_tsmiFont != null)
             {
                 _tsmiFont.Text = UiStrings.MenuFontSize;
@@ -1448,6 +1451,7 @@ namespace DictionaryTool.UI
                 CheckOnClick = true,
                 Checked     = _autoSearchEnabled
             };
+            _tsmiAutoSearch = tsmiAuto;
 
             // Sub-items: chọn delay
             var delays = new[] { (500, "0.5s"), (1000, "1s"), (1500, "1.5s"), (2000, "2s"), (3000, "3s") };
@@ -1521,18 +1525,19 @@ namespace DictionaryTool.UI
             cmsInfo.Items.Insert(insertAt++, tsmiFont);
 
             // --- Giao diện sáng/tối ---
+            // Nhãn đổi chiều theo trạng thái (đang dark → "Light theme", đang light →
+            // "Dark theme"), giống nút đổi ngôn ngữ — dùng Click thay vì CheckOnClick.
             var tsmiTheme = new System.Windows.Forms.ToolStripMenuItem
             {
-                Text = UiStrings.MenuTheme,
-                CheckOnClick = true,
-                Checked = _isLightTheme
+                Text = UiStrings.MenuTheme(_isLightTheme)
             };
             _tsmiTheme = tsmiTheme;
-            tsmiTheme.CheckedChanged += (s, e) =>
+            tsmiTheme.Click += (s, e) =>
             {
-                _isLightTheme = tsmiTheme.Checked;
+                _isLightTheme = !_isLightTheme;
                 SaveSetting("UI:Theme", _isLightTheme ? "Light" : "Dark");
                 ApplyTheme(_isLightTheme, rerender: true);
+                _tsmiTheme.Text = UiStrings.MenuTheme(_isLightTheme);
             };
             cmsInfo.Items.Insert(insertAt++, tsmiTheme);
 
