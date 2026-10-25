@@ -24,10 +24,13 @@ Tra từ điển **Anh · Việt · Trung** trong một cửa sổ duy nhất.
 | **Clipboard Watch** | Tự động tra khi copy text từ ứng dụng khác |
 | **Global hotkey** | Mặc định `Ctrl+Shift+D`, tuỳ chỉnh qua dialog ⚙ |
 | **Mini mode** | Thu gọn cửa sổ để xem cạnh tài liệu |
-| **Đánh dấu & Lịch sử** | Lưu từ yêu thích, click để tra lại ngay (không gọi API) |
+| **Đánh dấu & Lịch sử** | Lưu từ yêu thích, click để tra lại ngay (không gọi API); có ô **lọc nhanh** theo từ |
+| **Sao lưu / phục hồi** | Xuất/nhập toàn bộ bookmark **kèm tiến độ ôn tập (SRS)** ra file `.json` để backup / đổi máy |
+| **Cửa sổ Cài đặt** | Gom theme, cỡ chữ, tự động tra, clipboard, chạy nền ở khay, phím tắt về một chỗ (menu ℹ️ → Cài đặt) |
+| **Chạy nền ở khay** | Icon system tray; bật "chạy nền" thì đóng/thu nhỏ = ẩn xuống khay (hotkey vẫn sống), double-click để mở lại |
 | **Góp ý bản dịch** | Lưu phản hồi local → xuất `.xlsx` hoặc Google Sheets |
 | **Giao diện VI/EN** | Toggle ngôn ngữ giao diện trong menu ℹ️ |
-| **Lưu trạng thái** | Nhớ ngôn ngữ, clipboard, chip lock, auto-search, theme, cỡ chữ qua lần khởi động |
+| **Lưu trạng thái** | Nhớ ngôn ngữ, clipboard, chip lock, auto-search, theme, cỡ chữ, chạy-nền qua lần khởi động |
 
 ---
 
@@ -102,6 +105,29 @@ Mở `DictionaryTool.sln` bằng Visual Studio 2022+ và nhấn **F5**, hoặc b
 ```
 "C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe" DictionaryTool.sln /p:Configuration=Release /t:Restore,Build
 ```
+
+> App xuất ra **1 file `Dictionary Tool.exe`** — toàn bộ DLL managed đã nhúng vào exe
+> bằng **Costura.Fody**. Chỉ còn `Data/` (từ điển offline) + `x86/`,`x64/SQLite.Interop.dll`
+> (engine SQLite native) cần đi kèm cạnh exe.
+
+### 4. Đóng gói phát hành (installer)
+
+Thư mục `installer/` chứa sẵn bộ đóng gói:
+
+```
+pwsh installer\build-release.ps1
+```
+
+Lệnh này build Release rồi dựng `installer\release\Dictionary Tool\` (exe + Data + native
++ 2 file `.bat`). Copy nguyên thư mục đó đi phát; người dùng chọn:
+
+- **`installer.bat`** — cài vào `%LOCALAPPDATA%\Dictionary Tool` (không cần Admin), tạo
+  shortcut Desktop + Start Menu, kèm `uninstall.bat`.
+- **`portable.bat`** — tạo bản portable chạy liền, không đụng registry/shortcut hệ thống;
+  cấu hình lưu cạnh exe nên mang qua USB/máy khác vẫn giữ nguyên.
+
+Muốn 1 file `setup.exe` chuyên nghiệp (có Add/Remove Programs): cài **Inno Setup** rồi build
+`installer\DictionaryTool.iss`.
 
 ---
 

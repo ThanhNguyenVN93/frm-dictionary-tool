@@ -55,6 +55,12 @@ namespace DictionaryTool.UI
         private System.Windows.Forms.ToolStripMenuItem _tsmiTheme;
         private System.Windows.Forms.ToolStripMenuItem _tsmiAutoSearch;
 
+        // --- Thu nhỏ xuống khay hệ thống (tray) ---
+        private NotifyIcon _trayIcon;
+        private System.Windows.Forms.ToolStripMenuItem _tsmiTrayToggle;
+        private bool _closeToTray;   // bật: đóng/thu nhỏ = ẩn xuống khay, app chạy nền (hotkey vẫn sống)
+        private bool _reallyExit;    // cờ cho phép thoát hẳn (từ menu khay)
+
         // Mini mode KHÔNG bỏ cột VI/ZH (lần đầu làm vậy user phản hồi thiếu) — chỉ
         // thu nhỏ cả 3 cột lại. Toạ độ Full lấy đúng từ InitializeComponent, dùng để
         // khôi phục khi thoát Mini mode; toạ độ 3 cột + nội dung bên trong (pnlPhonetics,
@@ -123,6 +129,10 @@ namespace DictionaryTool.UI
             _bookmarkXlsxExporter = bookmarkXlsxExporter ?? throw new ArgumentNullException(nameof(bookmarkXlsxExporter));
             _feedbackRepository = feedbackRepository ?? new UserFeedbackRepository();
 
+            // Luôn mở giữa màn hình (trước đây dùng vị trí mặc định của Windows nên
+            // cửa sổ nhảy lung tung / lệch sang màn hình phụ).
+            StartPosition = FormStartPosition.CenterScreen;
+
             LoadSettings();
             SetupAutoSearchMenu();
             SetupExtraMenu();
@@ -170,16 +180,153 @@ namespace DictionaryTool.UI
             }
             catch (Exception) { }
 
+            SetupTrayIcon();
+
             LoadHotkeyFromConfig();
             RegisterCurrentHotKey();
 
             NativeMethods.AddClipboardFormatListener(Handle);
         }
 
+        private void SetupTrayIcon()
+        {
+            var menu = new ContextMenuStrip();
+
+            var open = new System.Windows.Forms.ToolStripMenuItem(UiStrings.TrayOpen);
+            open.Click += (s, e) => ShowAndFocusSearch();
+
+            _tsmiTrayToggle = new System.Windows.Forms.ToolStripMenuItem(UiStrings.TrayCloseToTray)
+            {
+                CheckOnClick = true,
+                Checked = _closeToTray
+            };
+            _tsmiTrayToggle.CheckedChanged += (s, e) => SetCloseToTray(_tsmiTrayToggle.Checked);
+
+            var exit = new System.Windows.Forms.ToolStripMenuItem(UiStrings.TrayExit);
+            exit.Click += (s, e) => ExitApplication();
+
+            menu.Items.Add(open);
+            menu.Items.Add(_tsmiTrayToggle);
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            menu.Items.Add(exit);
+
+            _trayIcon = new NotifyIcon
+            {
+                Icon = Icon,
+                Text = "Dictionary Tool",
+                Visible = true,
+                ContextMenuStrip = menu
+            };
+            _trayIcon.DoubleClick += (s, e) => ShowAndFocusSearch();
+        }
+
+        /// <summary>Bật/tắt chế độ chạy nền ở khay; lưu lại và đồng bộ các nơi hiển thị.</summary>
+        internal void SetCloseToTray(bool enabled)
+        {
+            if (_closeToTray == enabled)
+            {
+                // vẫn đồng bộ checkbox (phòng khi gọi từ nơi khác)
+                if (_tsmiTrayToggle != null) _tsmiTrayToggle.Checked = enabled;
+                return;
+            }
+            _closeToTray = enabled;
+            SaveSetting("UI:CloseToTray", _closeToTray.ToString().ToLower());
+            if (_tsmiTrayToggle != null && _tsmiTrayToggle.Checked != enabled)
+                _tsmiTrayToggle.Checked = enabled;
+        }
+
+        internal bool CloseToTray => _closeToTray;
+
+        // --- Bộ áp dụng tập trung: menu ℹ️ và cửa sổ Cài đặt dùng chung, tránh lệch trạng thái ---
+
+        internal bool IsLightTheme => _isLightTheme;
+        internal bool AutoSearchEnabled => _autoSearchEnabled;
+        internal int AutoSearchDelay => _autoSearchDelay;
+        internal bool ClipboardWatchEnabled => _clipboardWatchEnabled;
+        internal string HotkeyCombo => HotkeyConfigDialog.FormatCombo(_hotkeyModifiers, _hotkeyVk);
+
+        internal void SetTheme(bool light)
+        {
+            _isLightTheme = light;
+            SaveSetting("UI:Theme", light ? "Light" : "Dark");
+            ApplyTheme(light, rerender: true);
+            if (_tsmiTheme != null) _tsmiTheme.Text = UiStrings.MenuTheme(_isLightTheme);
+        }
+
+        internal void SetFontScale(float scale)
+        {
+            UiFont.Scale = scale;
+            SaveSetting("UI:FontScale", scale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (_tsmiFont != null)
+                foreach (System.Windows.Forms.ToolStripMenuItem sub in _tsmiFont.DropDownItems)
+                    sub.Checked = Math.Abs((float)sub.Tag - scale) < 0.01f;
+            ApplyFontScale();
+            RerenderCurrentResult();
+        }
+
+        internal void SetAutoSearch(bool enabled, int delayMs)
+        {
+            _autoSearchEnabled = enabled;
+            if (delayMs >= 500) _autoSearchDelay = delayMs;
+            SaveSetting("UI:AutoSearchEnabled", enabled.ToString().ToLower());
+            SaveSetting("UI:AutoSearchDelay", _autoSearchDelay.ToString());
+            if (_tsmiAutoSearch != null)
+            {
+                if (_tsmiAutoSearch.Checked != enabled) _tsmiAutoSearch.Checked = enabled;
+                foreach (System.Windows.Forms.ToolStripMenuItem sub in _tsmiAutoSearch.DropDownItems)
+                    sub.Checked = (int)sub.Tag == _autoSearchDelay;
+            }
+            if (!enabled) debounceTimer.Stop();
+        }
+
+        internal void SetClipboardWatch(bool enabled)
+        {
+            _clipboardWatchEnabled = enabled;
+            btnClipboardToggle.Text = enabled ? UiStrings.BtnClipboardOn : UiStrings.BtnClipboardOff;
+            ApplyClipboardButtonState();
+            SaveSetting("UI:ClipboardEnabled", enabled.ToString().ToLower());
+        }
+
+        internal void OpenHotkeyConfigDialog() => btnHotkeyConfig_Click(this, EventArgs.Empty);
+
+        private void ExitApplication()
+        {
+            _reallyExit = true;
+            if (_trayIcon != null) _trayIcon.Visible = false;
+            Close();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            // Chạy nền: thu nhỏ = ẩn khỏi taskbar, chỉ còn icon khay.
+            if (_closeToTray && WindowState == FormWindowState.Minimized)
+            {
+                Hide();
+            }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Người dùng bấm [X] khi đang bật chạy nền → ẩn xuống khay thay vì thoát.
+            if (!_reallyExit && _closeToTray && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                Hide();
+                return;
+            }
+            base.OnFormClosing(e);
+        }
+
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             UnregisterCurrentHotKey();
             NativeMethods.RemoveClipboardFormatListener(Handle);
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+            }
             base.OnFormClosed(e);
         }
 
@@ -1088,72 +1235,81 @@ namespace DictionaryTool.UI
                 }
                 var labelText = string.Join("  ", labelParts);
 
-                // Guna2Button.Text bị cắt cụt khi chuỗi trộn icon loa (emoji) với ký
-                // hiệu IPA (Unicode IPA Extensions) trong cùng 1 property Text — đã
-                // xác minh Text/Width của control vẫn đúng, chỉ riêng phần vẽ (paint)
-                // bị lỗi. Dùng Label (GDI chuẩn, render IPA đúng) cho phần chữ,
-                // Guna2Button chỉ chứa icon loa (1 ký tự, không lỗi).
-                var innerRow = new FlickerFreeFlowLayoutPanel
+                // Guna2Button vẽ emoji (🔊) lệch so với rectangle của nút (cùng lỗi
+                // paint đã gặp khi trộn emoji với IPA). Thay vì nút riêng + label
+                // riêng (dễ lệch theo chiều dọc), dùng 1 Label GDI duy nhất chứa cả
+                // icon loa lẫn chữ IPA (GDI render chuẩn, canh hàng chính xác) và
+                // biến cả pill thành nút phát — hết lệch, lại dễ bấm hơn.
+                var content = hasAudio ? "🔊" : string.Empty;
+                if (!string.IsNullOrEmpty(labelText))
+                    content = content.Length > 0 ? content + "  " + labelText : labelText;
+
+                var contentLabel = new Label
                 {
-                    FlowDirection = FlowDirection.LeftToRight,
                     AutoSize = true,
-                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                    WrapContents = false
+                    Text = content,
+                    Font = UiFont.Get(10F),
+                    ForeColor = UiPalette.Accent,
+                    Margin = new Padding(0),
+                    Location = new Point(14, 8)
                 };
+
+                // Guna2Panel với AutoSize=true + BorderRadius vẽ nền bo tròn 2 lần ở
+                // 2 kích thước (lúc đo trước & sau khi co giãn) -> nhìn như pill bị
+                // "đúp"/lệch. Dùng kích thước cố định đo sẵn từ Label để tránh lỗi.
+                var ps = contentLabel.PreferredSize;
+                var pill = new Guna2Panel
+                {
+                    AutoSize = false,
+                    Size = new Size(ps.Width + 28, ps.Height + 16),
+                    BorderRadius = 14,
+                    FillColor = UiPalette.AccentSoft,
+                    Margin = new Padding(0, 0, 10, 10)
+                };
+                DisableShadow(pill);
+                pill.Controls.Add(contentLabel);
 
                 if (hasAudio)
                 {
-                    var iconButton = new Guna2Button
-                    {
-                        Text = "🔊",
-                        AutoSize = true,
-                        Padding = new Padding(0),
-                        Font = UiFont.Get(10F),
-                        FillColor = UiPalette.AccentSoft,
-                        ForeColor = UiPalette.Accent,
-                        BorderRadius = 14,
-                        Cursor = Cursors.Hand,
-                        Margin = new Padding(0, 0, 6, 0)
-                    };
-                    iconButton.HoverState.FillColor = UiPalette.AccentSoft;
-                    iconButton.ShadowDecoration.Enabled = false;
-
                     var audioUrl = phonetic.AudioUrl;
-                    var capturedBtn = iconButton;
                     var capturedWord = result.Word;
-                    iconButton.Click += async (s, e) => await PlayAudioAsync(audioUrl, capturedBtn, capturedWord).ConfigureAwait(true);
-
-                    innerRow.Controls.Add(iconButton);
-                }
-
-                if (!string.IsNullOrEmpty(labelText))
-                {
-                    var textLabel = new Label
+                    var capturedPill = pill;
+                    Action<bool> setPlaying = playing =>
                     {
-                        AutoSize = true,
-                        Text = labelText,
-                        Font = UiFont.Get(10F),
-                        ForeColor = UiPalette.Accent,
-                        Margin = new Padding(0, 4, 0, 0)
+                        if (!capturedPill.IsDisposed)
+                            capturedPill.FillColor = playing ? UiPalette.Accent : UiPalette.AccentSoft;
                     };
-                    innerRow.Controls.Add(textLabel);
+                    EventHandler play = async (s, e) =>
+                        await PlayAudioAsync(audioUrl, setPlaying, capturedWord).ConfigureAwait(true);
+                    // Click không bubble từ Label lên panel -> gắn cho cả hai.
+                    pill.Click += play;
+                    contentLabel.Click += play;
+                    pill.Cursor = Cursors.Hand;
+                    contentLabel.Cursor = Cursors.Hand;
+                    EventHandler enter = (s, e) => { if (!pill.IsDisposed) pill.FillColor = UiPalette.AccentSoftHover; };
+                    EventHandler leave = (s, e) => { if (!pill.IsDisposed) pill.FillColor = UiPalette.AccentSoft; };
+                    pill.MouseEnter += enter; contentLabel.MouseEnter += enter;
+                    pill.MouseLeave += leave; contentLabel.MouseLeave += leave;
                 }
-
-                var pill = new Guna2Panel
-                {
-                    AutoSize = true,
-                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                    BorderRadius = 14,
-                    FillColor = UiPalette.AccentSoft,
-                    Padding = new Padding(14, 8, 14, 8),
-                    Margin = new Padding(0, 0, 10, 10)
-                };
-                pill.ShadowDecoration.Enabled = false;
-                pill.Controls.Add(innerRow);
 
                 pnlPhonetics.Controls.Add(pill);
             }
         }
+
+        /// <summary>
+        /// Tắt hẳn đổ bóng Guna cho control tạo động. Chỉ gán Enabled=false đôi khi
+        /// vẫn vẽ bóng (bóng lệch xuống phải trông như nút bị "đúp"/lệch), nên gán
+        /// thêm Depth=0 và bề dày bóng = 0 cho chắc.
+        /// </summary>
+        private static void DisableShadow(Guna.UI2.WinForms.Suite.ShadowDecoration shadow)
+        {
+            shadow.Enabled = false;
+            shadow.Depth = 0;
+            shadow.Shadow = new Padding(0);
+        }
+
+        private static void DisableShadow(Guna.UI2.WinForms.Guna2Panel panel) => DisableShadow(panel.ShadowDecoration);
+        private static void DisableShadow(Guna.UI2.WinForms.Guna2Button button) => DisableShadow(button.ShadowDecoration);
 
         private void RenderDictionaryMeanings(WordLookupResult result)
         {
@@ -1313,9 +1469,9 @@ namespace DictionaryTool.UI
             };
         }
 
-        private async Task PlayAudioAsync(string audioUrl, Guna.UI2.WinForms.Guna2Button btn = null, string ttsWord = null)
+        private async Task PlayAudioAsync(string audioUrl, Action<bool> setPlaying = null, string ttsWord = null)
         {
-            if (btn != null) btn.FillColor = UiPalette.Accent;
+            setPlaying?.Invoke(true);
             try
             {
                 var played = await TryPlayFromUrlAsync(audioUrl).ConfigureAwait(true);
@@ -1332,8 +1488,7 @@ namespace DictionaryTool.UI
             }
             finally
             {
-                if (btn != null && !btn.IsDisposed)
-                    btn.FillColor = UiPalette.AccentSoft;
+                setPlaying?.Invoke(false);
             }
         }
 
@@ -1399,7 +1554,7 @@ namespace DictionaryTool.UI
                 Cursor = Cursors.Hand
             };
             btn.HoverState.FillColor = UiPalette.AccentSoft;
-            btn.ShadowDecoration.Enabled = false;
+            DisableShadow(btn);
             var capturedWord = word;
             var capturedLang = langCode;
             var capturedBtn = btn;
@@ -1430,6 +1585,9 @@ namespace DictionaryTool.UI
 
             if (int.TryParse(System.Configuration.ConfigurationManager.AppSettings["UI:AutoSearchDelay"], out var delay) && delay >= 500)
                 _autoSearchDelay = delay;
+
+            if (bool.TryParse(System.Configuration.ConfigurationManager.AppSettings["UI:CloseToTray"], out var closeToTray))
+                _closeToTray = closeToTray;
 
             _isLightTheme = System.Configuration.ConfigurationManager.AppSettings["UI:Theme"] == "Light";
 
@@ -1501,6 +1659,15 @@ namespace DictionaryTool.UI
         {
             var insertAt = cmsInfo.Items.IndexOf(tsmiSepLang);
             if (insertAt < 0) insertAt = cmsInfo.Items.Count;
+
+            // --- Cài đặt (gom tùy chọn) ---
+            var tsmiSettings = new System.Windows.Forms.ToolStripMenuItem { Text = UiStrings.MenuSettings };
+            tsmiSettings.Click += (s, e) =>
+            {
+                using (var dlg = new SettingsDialog(this))
+                    dlg.ShowDialog(this);
+            };
+            cmsInfo.Items.Insert(insertAt++, tsmiSettings);
 
             // --- Ôn tập (SRS) ---
             _tsmiReview = new System.Windows.Forms.ToolStripMenuItem { Text = UiStrings.MenuReview };

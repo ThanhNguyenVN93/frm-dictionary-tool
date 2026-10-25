@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using DictionaryTool.Core.Models;
 using DictionaryTool.Core.Srs;
@@ -273,6 +274,64 @@ namespace DictionaryTool.Core.Repositories
                         write.ExecuteNonQuery();
                     }
                 }
+            });
+        }
+
+        public Task<int> ImportAsync(IEnumerable<BookmarkEntry> entries, bool overwrite)
+        {
+            var list = (entries ?? Enumerable.Empty<BookmarkEntry>())
+                .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Query))
+                .ToList();
+            if (list.Count == 0)
+            {
+                return Task.FromResult(0);
+            }
+
+            return Task.Run(() =>
+            {
+                // overwrite: cập nhật cả tiến độ SRS của từ đã có; ngược lại chỉ thêm mới.
+                var conflict = overwrite
+                    ? @"ON CONFLICT(Query, Language) DO UPDATE SET
+                            CreatedAtUtc = excluded.CreatedAtUtc,
+                            NextReviewUtc = excluded.NextReviewUtc,
+                            IntervalDays = excluded.IntervalDays,
+                            Ease = excluded.Ease,
+                            Reps = excluded.Reps,
+                            LastReviewedUtc = excluded.LastReviewedUtc"
+                    : "ON CONFLICT(Query, Language) DO NOTHING";
+
+                var affected = 0;
+                using (var connection = new SQLiteConnection(_connectionString))
+                {
+                    connection.Open();
+                    using (var transaction = connection.BeginTransaction())
+                    {
+                        foreach (var entry in list)
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.Transaction = transaction;
+                                command.CommandText =
+                                    "INSERT INTO Bookmark (Query, Language, CreatedAtUtc, NextReviewUtc, IntervalDays, Ease, Reps, LastReviewedUtc) " +
+                                    "VALUES (@query, @language, @created, @next, @interval, @ease, @reps, @last) " + conflict + ";";
+                                command.Parameters.AddWithValue("@query", entry.Query.Trim());
+                                command.Parameters.AddWithValue("@language", entry.Language.ToString());
+                                command.Parameters.AddWithValue("@created",
+                                    (entry.CreatedAtUtc == default(DateTime) ? DateTime.UtcNow : entry.CreatedAtUtc).ToUniversalTime().ToString("o"));
+                                command.Parameters.AddWithValue("@next",
+                                    (object)entry.NextReviewUtc?.ToUniversalTime().ToString("o") ?? DBNull.Value);
+                                command.Parameters.AddWithValue("@interval", entry.IntervalDays);
+                                command.Parameters.AddWithValue("@ease", entry.Ease <= 0 ? SrsScheduler.DefaultEase : entry.Ease);
+                                command.Parameters.AddWithValue("@reps", entry.Reps);
+                                command.Parameters.AddWithValue("@last",
+                                    (object)entry.LastReviewedUtc?.ToUniversalTime().ToString("o") ?? DBNull.Value);
+                                affected += command.ExecuteNonQuery();
+                            }
+                        }
+                        transaction.Commit();
+                    }
+                }
+                return affected;
             });
         }
 

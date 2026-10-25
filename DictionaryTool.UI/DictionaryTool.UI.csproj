@@ -7,7 +7,7 @@
     <ProjectGuid>{26F7A945-394C-44D8-8E47-A30661030FFE}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>DictionaryTool.UI</RootNamespace>
-    <AssemblyName>DictionaryTool.UI</AssemblyName>
+    <AssemblyName>Dictionary Tool</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -68,6 +68,7 @@
     <!-- Nhúng toàn bộ DLL phụ thuộc vào 1 exe duy nhất -->
     <PackageReference Include="Costura.Fody">
       <Version>5.7.0</Version>
+      <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Fody">
       <Version>6.8.0</Version>
@@ -108,6 +109,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="ReviewForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SettingsDialog.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Program.cs" />
