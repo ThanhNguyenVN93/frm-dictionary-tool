@@ -63,10 +63,15 @@ namespace DictionaryTool.Core
 
             // Chỉ probe khi có dấu hiệu từ tiếng Việt gõ không dấu — tránh nhầm
             // những từ đồng dạng ASCII như "run" (cũng là từ tiếng Việt trong StarDict).
-            if (!AsciiVietnameseMarkerRegex.IsMatch(input.Trim()))
+            // Ngoài marker "kh/ng/nh/ngh", còn probe khi input bắt đầu bằng loại từ
+            // tiếng Việt ("con mèo", "cái bàn"…) — probe mới là nguồn quyết định, nên
+            // nếu phần còn lại không khớp index thì vẫn trả English.
+            var trimmed = input.Trim();
+            if (!AsciiVietnameseMarkerRegex.IsMatch(trimmed)
+                && VietnameseNormalizer.StripLeadingClassifier(trimmed) == null)
                 return Language.English;
 
-            var isKnownVietnamese = await vietnameseIndexProbe(input.Trim()).ConfigureAwait(false);
+            var isKnownVietnamese = await vietnameseIndexProbe(trimmed).ConfigureAwait(false);
             return isKnownVietnamese ? Language.Vietnamese : Language.English;
         }
     }
