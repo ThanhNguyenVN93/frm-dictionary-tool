@@ -1,12 +1,12 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("DictionaryTool.UI")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("Dictionary Tool")]
+[assembly: AssemblyDescription("Tra từ điển Anh · Việt · Trung trong một cửa sổ (EN / VI / ZH)")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("DictionaryTool.UI")]
-[assembly: AssemblyCopyright("")]
+[assembly: AssemblyCompany("ThanhCode93")]
+[assembly: AssemblyProduct("Dictionary Tool")]
+[assembly: AssemblyCopyright("© 2026 ThanhCode93")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
