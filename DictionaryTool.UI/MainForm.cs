@@ -47,6 +47,12 @@ namespace DictionaryTool.UI
         private bool _isMiniMode;
         private bool _isLoading;
         private Language? _lockedLanguage;
+        private bool _isLightTheme;
+        private TrilingualResult _lastResult;   // để render lại khi đổi cỡ chữ / theme
+        private readonly Dictionary<Control, Font> _baseFonts = new Dictionary<Control, Font>();
+        private System.Windows.Forms.ToolStripMenuItem _tsmiReview;
+        private System.Windows.Forms.ToolStripMenuItem _tsmiFont;
+        private System.Windows.Forms.ToolStripMenuItem _tsmiTheme;
 
         // Mini mode KHÔNG bỏ cột VI/ZH (lần đầu làm vậy user phản hồi thiếu) — chỉ
         // thu nhỏ cả 3 cột lại. Toạ độ Full lấy đúng từ InitializeComponent, dùng để
@@ -118,6 +124,9 @@ namespace DictionaryTool.UI
 
             LoadSettings();
             SetupAutoSearchMenu();
+            SetupExtraMenu();
+            ApplyFontScale();
+            ApplyTheme(_isLightTheme, rerender: false);
             ResetToIdleState();
             ApplyClipboardButtonState();
             ApplyUiLanguage();
@@ -579,6 +588,21 @@ namespace DictionaryTool.UI
             tsmiDongGop.Text = UiStrings.MenuDonate;
             tsmiLangToggle.Text = UiStrings.MenuLangToggle;
 
+            if (_tsmiReview != null) _tsmiReview.Text = UiStrings.MenuReview;
+            if (_tsmiTheme != null) _tsmiTheme.Text = UiStrings.MenuTheme;
+            if (_tsmiFont != null)
+            {
+                _tsmiFont.Text = UiStrings.MenuFontSize;
+                foreach (System.Windows.Forms.ToolStripMenuItem sub in _tsmiFont.DropDownItems)
+                {
+                    var f = (float)sub.Tag;
+                    sub.Text = f == 0.85f ? UiStrings.FontSmall
+                             : f == 1.0f ? UiStrings.FontMedium
+                             : f == 1.25f ? UiStrings.FontLarge
+                             : UiStrings.FontXLarge;
+                }
+            }
+
             toolTipToolbar.SetToolTip(btnSearch, UiStrings.TipSearch);
             toolTipToolbar.SetToolTip(btnRetry, UiStrings.TipRetry);
             toolTipToolbar.SetToolTip(btnClipboardToggle, UiStrings.TipClipboard);
@@ -729,6 +753,12 @@ namespace DictionaryTool.UI
 
         private void RenderResult(TrilingualResult result)
         {
+            RenderResult(result, persist: true);
+        }
+
+        private void RenderResult(TrilingualResult result, bool persist)
+        {
+            _lastResult = result;
             bool hasEnglishData = result.EnglishResult != null && !result.EnglishResult.HasError && !result.EnglishResult.NotFound;
             bool hasVietnameseData = result.VietnameseResult != null && !result.VietnameseResult.NotFound;
             bool hasChineseData = result.ChineseResult != null && !result.ChineseResult.NotFound;
@@ -770,8 +800,11 @@ namespace DictionaryTool.UI
             // Tóm tắt kết quả dạng "VI: teacher, instructor" để pre-fill FeedbackDialog
             _currentResultSummary = BuildResultSummary(result);
             btnBookmarkToggle.Enabled = true;
-            _ = _historyRepository.AddAsync(result.Query, result.DetectedLanguage);
-            _ = _historyRepository.SaveTrilingualResultAsync(result.Query, result.DetectedLanguage, result);
+            if (persist)
+            {
+                _ = _historyRepository.AddAsync(result.Query, result.DetectedLanguage);
+                _ = _historyRepository.SaveTrilingualResultAsync(result.Query, result.DetectedLanguage, result);
+            }
             _ = RefreshBookmarkButtonAsync();
         }
 
@@ -882,6 +915,12 @@ namespace DictionaryTool.UI
 
             lblWord.Text = result.Word;
             RenderPhonetics(result);
+            if (result.Source != SourceKind.None)
+            {
+                var badge = CreateSourceBadge(result.Source);
+                pnlPhonetics.Controls.Add(badge);
+                pnlPhonetics.Controls.SetChildIndex(badge, 0);
+            }
             RenderDictionaryMeanings(result);
             RenderLearnerMeanings(result);
         }
@@ -902,6 +941,9 @@ namespace DictionaryTool.UI
             // đây thực sự là từ tiếng Việt (có dấu hoặc bắt đầu bằng cụm VI).
             bool wordIsVietnamese = LanguageDetector.Detect(result.Word ?? string.Empty) == Language.Vietnamese;
             lblViWord.Text = wordIsVietnamese ? result.Word : "—";
+
+            if (result.Source != SourceKind.None)
+                pnlViDefinitions.Controls.Add(CreateSourceBadge(result.Source));
 
             if (wordIsVietnamese && !string.IsNullOrWhiteSpace(result.Word))
                 pnlViDefinitions.Controls.Add(CreateTtsButtonRow(result.Word, "vi"));
@@ -929,12 +971,29 @@ namespace DictionaryTool.UI
                 : $"{result.Simplified} ({result.Traditional})";
             lblZhPinyin.Text = result.Pinyin;
 
+            if (result.Source != SourceKind.None)
+                pnlZhDefinitions.Controls.Add(CreateSourceBadge(result.Source));
+
             if (!string.IsNullOrWhiteSpace(result.Simplified))
                 pnlZhDefinitions.Controls.Add(CreateTtsButtonRow(result.Simplified, "zh-CN"));
 
             foreach (var definition in result.Definitions)
             {
                 pnlZhDefinitions.Controls.Add(CreateBulletLabel(definition));
+            }
+
+            // #7: tách từng chữ Hán (pinyin + nghĩa riêng) cho từ ghép.
+            if (result.Characters != null && result.Characters.Count > 0)
+            {
+                pnlZhDefinitions.Controls.Add(CreatePartOfSpeechBadge(UiStrings.SectionCharBreakdown));
+                foreach (var ch in result.Characters)
+                {
+                    var defs = ch.Definitions != null && ch.Definitions.Count > 0
+                        ? string.Join("; ", ch.Definitions.GetRange(0, Math.Min(3, ch.Definitions.Count)))
+                        : string.Empty;
+                    var line = $"{ch.Character}  [{ch.Pinyin}]" + (defs.Length > 0 ? "  —  " + defs : string.Empty);
+                    pnlZhDefinitions.Controls.Add(CreateBulletLabel(line));
+                }
             }
         }
 
@@ -988,7 +1047,7 @@ namespace DictionaryTool.UI
                 AutoSize = true,
                 MaximumSize = new Size(870, 0),
                 Text = $"[{languageCode}]  {text}",
-                Font = new Font("Segoe UI", 9.5F),
+                Font = UiFont.Get(9.5F),
                 ForeColor = languageCode == "EN" ? UiPalette.TextPrimary : UiPalette.TextSecondary,
                 Margin = new Padding(0, 1, 0, 1)
             };
@@ -1038,7 +1097,7 @@ namespace DictionaryTool.UI
                         Text = "🔊",
                         AutoSize = true,
                         Padding = new Padding(0),
-                        Font = new Font("Segoe UI", 10F),
+                        Font = UiFont.Get(10F),
                         FillColor = UiPalette.AccentSoft,
                         ForeColor = UiPalette.Accent,
                         BorderRadius = 14,
@@ -1062,7 +1121,7 @@ namespace DictionaryTool.UI
                     {
                         AutoSize = true,
                         Text = labelText,
-                        Font = new Font("Segoe UI", 10F),
+                        Font = UiFont.Get(10F),
                         ForeColor = UiPalette.Accent,
                         Margin = new Padding(0, 4, 0, 0)
                     };
@@ -1108,7 +1167,33 @@ namespace DictionaryTool.UI
                         pnlDefinitions.Controls.Add(CreateExampleLabel(definition.Example));
                     }
                 }
+
+                // #5: đồng nghĩa / trái nghĩa (dictionaryapi.dev trả kèm theo part-of-speech).
+                if (meaning.Synonyms != null && meaning.Synonyms.Count > 0)
+                {
+                    pnlDefinitions.Controls.Add(CreateRelatedLabel("≈ " + UiStrings.LabelSynonyms, meaning.Synonyms));
+                }
+                if (meaning.Antonyms != null && meaning.Antonyms.Count > 0)
+                {
+                    pnlDefinitions.Controls.Add(CreateRelatedLabel("≠ " + UiStrings.LabelAntonyms, meaning.Antonyms));
+                }
             }
+        }
+
+        private static Label CreateRelatedLabel(string prefix, System.Collections.Generic.List<string> words)
+        {
+            // Giới hạn 8 từ để không tràn cột; phần còn lại rút gọn bằng "…".
+            var shown = words.Count > 8 ? words.GetRange(0, 8) : words;
+            var text = prefix + ": " + string.Join(", ", shown) + (words.Count > 8 ? " …" : "");
+            return new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(260, 0),
+                Text = text,
+                Font = UiFont.Get(9F),
+                ForeColor = UiPalette.Accent,
+                Margin = new Padding(6, 2, 0, 4)
+            };
         }
 
         private void RenderLearnerMeanings(WordLookupResult result)
@@ -1135,6 +1220,31 @@ namespace DictionaryTool.UI
             }
         }
 
+        /// <summary>Badge nhỏ cho biết nguồn dữ liệu (online/offline + tên) — #6.</summary>
+        private static Guna2Button CreateSourceBadge(SourceKind source)
+        {
+            bool online = source == SourceKind.OnlineDictApi
+                       || source == SourceKind.OnlineWiktionary
+                       || source == SourceKind.OnlineGoogleTranslate;
+
+            var badge = new Guna2Button
+            {
+                Text = UiStrings.SourceLabel(source),
+                AutoSize = true,
+                Padding = new Padding(8, 3, 8, 3),
+                Font = UiFont.Get(8F),
+                FillColor = online ? UiPalette.AccentSoft : UiPalette.NeutralSoft,
+                ForeColor = online ? UiPalette.Accent : UiPalette.TextSecondary,
+                BorderRadius = 9,
+                Cursor = Cursors.Default,
+                TabStop = false,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            badge.HoverState.FillColor = online ? UiPalette.AccentSoft : UiPalette.NeutralSoft;
+            badge.ShadowDecoration.Enabled = false;
+            return badge;
+        }
+
         private static Guna2Button CreatePartOfSpeechBadge(string text)
         {
             var badge = new Guna2Button
@@ -1142,7 +1252,7 @@ namespace DictionaryTool.UI
                 Text = text.ToUpperInvariant(),
                 AutoSize = true,
                 Padding = new Padding(8, 4, 8, 4),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Font = UiFont.Get(8.5F, FontStyle.Bold),
                 FillColor = UiPalette.NeutralSoft,
                 ForeColor = UiPalette.TextSecondary,
                 BorderRadius = 10,
@@ -1161,7 +1271,7 @@ namespace DictionaryTool.UI
                 AutoSize = true,
                 MaximumSize = new Size(260, 0),
                 Text = "•  " + text,
-                Font = new Font("Segoe UI", 10F),
+                Font = UiFont.Get(10F),
                 ForeColor = UiPalette.TextPrimary,
                 Margin = new Padding(6, 2, 0, 2)
             };
@@ -1174,7 +1284,7 @@ namespace DictionaryTool.UI
                 AutoSize = true,
                 MaximumSize = new Size(240, 0),
                 Text = "      " + text,
-                Font = new Font("Segoe UI", 9F, FontStyle.Italic),
+                Font = UiFont.Get(9F, FontStyle.Italic),
                 ForeColor = UiPalette.TextSecondary,
                 Margin = new Padding(6, 0, 0, 6)
             };
@@ -1186,7 +1296,7 @@ namespace DictionaryTool.UI
             {
                 AutoSize = true,
                 Text = text,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Italic),
+                Font = UiFont.Get(9.5F, FontStyle.Italic),
                 ForeColor = UiPalette.TextSecondary,
                 Margin = new Padding(0, 2, 0, 2)
             };
@@ -1271,7 +1381,7 @@ namespace DictionaryTool.UI
                 Text = "🔊",
                 AutoSize = true,
                 Padding = new Padding(0),
-                Font = new Font("Segoe UI", 10F),
+                Font = UiFont.Get(10F),
                 FillColor = UiPalette.AccentSoft,
                 ForeColor = UiPalette.Accent,
                 BorderRadius = 14,
@@ -1309,6 +1419,18 @@ namespace DictionaryTool.UI
 
             if (int.TryParse(System.Configuration.ConfigurationManager.AppSettings["UI:AutoSearchDelay"], out var delay) && delay >= 500)
                 _autoSearchDelay = delay;
+
+            _isLightTheme = System.Configuration.ConfigurationManager.AppSettings["UI:Theme"] == "Light";
+
+            if (float.TryParse(
+                    System.Configuration.ConfigurationManager.AppSettings["UI:FontScale"],
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var scale)
+                && scale >= 0.7f && scale <= 2.0f)
+            {
+                UiFont.Scale = scale;
+            }
         }
 
         /// <summary>
@@ -1357,6 +1479,128 @@ namespace DictionaryTool.UI
             };
 
             cmsInfo.Items.Insert(cmsInfo.Items.IndexOf(sep), tsmiAuto);
+        }
+
+        /// <summary>
+        /// Thêm vào cmsInfo: Ôn tập (#2), Cỡ chữ (#3), Giao diện sáng/tối (#4).
+        /// Dựng programmatically để tránh sửa Designer.
+        /// </summary>
+        private void SetupExtraMenu()
+        {
+            var insertAt = cmsInfo.Items.IndexOf(tsmiSepLang);
+            if (insertAt < 0) insertAt = cmsInfo.Items.Count;
+
+            // --- Ôn tập (SRS) ---
+            _tsmiReview = new System.Windows.Forms.ToolStripMenuItem { Text = UiStrings.MenuReview };
+            _tsmiReview.Click += (s, e) => OpenReviewForm();
+            cmsInfo.Items.Insert(insertAt++, _tsmiReview);
+
+            // --- Cỡ chữ ---
+            var tsmiFont = new System.Windows.Forms.ToolStripMenuItem { Text = UiStrings.MenuFontSize };
+            _tsmiFont = tsmiFont;
+            var sizes = new[] { (0.85f, UiStrings.FontSmall), (1.0f, UiStrings.FontMedium), (1.25f, UiStrings.FontLarge), (1.5f, UiStrings.FontXLarge) };
+            foreach (var (factor, label) in sizes)
+            {
+                var item = new System.Windows.Forms.ToolStripMenuItem
+                {
+                    Text = label,
+                    Tag = factor,
+                    Checked = Math.Abs(UiFont.Scale - factor) < 0.01f
+                };
+                item.Click += (s, e) =>
+                {
+                    UiFont.Scale = (float)((System.Windows.Forms.ToolStripMenuItem)s).Tag;
+                    SaveSetting("UI:FontScale", UiFont.Scale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    foreach (System.Windows.Forms.ToolStripMenuItem sub in tsmiFont.DropDownItems)
+                        sub.Checked = Math.Abs((float)sub.Tag - UiFont.Scale) < 0.01f;
+                    ApplyFontScale();
+                    RerenderCurrentResult();
+                };
+                tsmiFont.DropDownItems.Add(item);
+            }
+            cmsInfo.Items.Insert(insertAt++, tsmiFont);
+
+            // --- Giao diện sáng/tối ---
+            var tsmiTheme = new System.Windows.Forms.ToolStripMenuItem
+            {
+                Text = UiStrings.MenuTheme,
+                CheckOnClick = true,
+                Checked = _isLightTheme
+            };
+            _tsmiTheme = tsmiTheme;
+            tsmiTheme.CheckedChanged += (s, e) =>
+            {
+                _isLightTheme = tsmiTheme.Checked;
+                SaveSetting("UI:Theme", _isLightTheme ? "Light" : "Dark");
+                ApplyTheme(_isLightTheme, rerender: true);
+            };
+            cmsInfo.Items.Insert(insertAt++, tsmiTheme);
+
+            cmsInfo.Items.Insert(insertAt, new System.Windows.Forms.ToolStripSeparator());
+
+            // Cập nhật số từ đến hạn mỗi lần mở menu.
+            cmsInfo.Opening += async (s, e) => await RefreshReviewMenuAsync().ConfigureAwait(true);
+        }
+
+        private async Task RefreshReviewMenuAsync()
+        {
+            try
+            {
+                var due = await _bookmarkRepository.GetDueCountAsync(DateTime.UtcNow).ConfigureAwait(true);
+                _tsmiReview.Text = due > 0 ? UiStrings.MenuReviewDue(due) : UiStrings.MenuReview;
+            }
+            catch (Exception)
+            {
+                // Không để lỗi đếm làm hỏng menu.
+            }
+        }
+
+        private void ApplyFontScale()
+        {
+            // Co giãn các nhãn tiêu đề tĩnh theo cỡ gốc đã lưu lần đầu (tránh cộng dồn).
+            Control[] scalable = { lblWord, lblViWord, lblZhWord, lblZhPinyin };
+            foreach (var c in scalable)
+            {
+                if (c == null) continue;
+                if (!_baseFonts.TryGetValue(c, out var baseFont))
+                {
+                    baseFont = c.Font;
+                    _baseFonts[c] = baseFont;
+                }
+                c.Font = new Font(baseFont.FontFamily, baseFont.Size * UiFont.Scale, baseFont.Style);
+            }
+            // Nội dung định nghĩa/ví dụ được render lại qua UiFont.Get nên tự co giãn.
+        }
+
+        private void ApplyTheme(bool light, bool rerender)
+        {
+            ThemeManager.ApplyTheme(this, light);
+            // Các control set màu bằng palette trong code cần refresh lại trạng thái.
+            UpdateLanguageChipLockState();
+            ApplyClipboardButtonState();
+            if (rerender) RerenderCurrentResult();
+        }
+
+        private void RerenderCurrentResult()
+        {
+            if (_lastResult != null && !pnlError.Visible && !_isLoading)
+            {
+                RenderResult(_lastResult, persist: false);
+            }
+        }
+
+        private void OpenReviewForm()
+        {
+            using (var form = new ReviewForm(_bookmarkRepository, _trilingualLookupService))
+            {
+                form.SearchRequested += (word, lang) =>
+                {
+                    txtSearch.Text = word;
+                    debounceTimer.Stop();
+                    _ = SearchFromHistoryAsync(word, lang);
+                };
+                form.ShowDialog(this);
+            }
         }
 
         private void ApplyClipboardButtonState()

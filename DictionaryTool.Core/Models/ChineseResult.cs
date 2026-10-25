@@ -14,5 +14,14 @@ namespace DictionaryTool.Core.Models
         public List<string> Definitions { get; set; } = new List<string>();
 
         public bool NotFound { get; set; }
+
+        public SourceKind Source { get; set; } = SourceKind.None;
+
+        /// <summary>
+        /// Tách từng chữ Hán trong từ (vd 老师 → 老, 师) kèm pinyin + nghĩa riêng của
+        /// mỗi chữ, tra từ chính CC-CEDICT. Rỗng nếu từ chỉ có 1 ký tự hoặc không tra
+        /// được ký tự lẻ nào.
+        /// </summary>
+        public List<ChineseCharacterInfo> Characters { get; set; } = new List<ChineseCharacterInfo>();
     }
 }

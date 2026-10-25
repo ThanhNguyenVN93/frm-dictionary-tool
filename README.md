@@ -14,13 +14,20 @@ Tra từ điển **Anh · Việt · Trung** trong một cửa sổ duy nhất.
 | **Tìm kiếm bằng Enter** | Nhấn Enter để tra — không tra liên tục khi đang gõ |
 | **Tự động tra (tùy chọn)** | Bật trong menu ℹ️, chọn delay 0.5s–3s |
 | **Câu ví dụ** | Tatoeba EN↔VI, EN↔ZH |
+| **Phát âm (TTS)** | Nút 🔊 cho EN (audio gốc) + VI/ZH (Google TTS), có cache |
+| **Đồng / trái nghĩa** | Hiển thị synonyms / antonyms cho từ tiếng Anh |
+| **Tách chữ Hán** | Từ ghép ZH → pinyin + nghĩa của từng ký tự (từ CC-CEDICT) |
+| **Nhãn nguồn** | Badge cho biết kết quả từ online hay offline + tên nguồn |
+| **Ôn tập giãn cách** | SRS kiểu Anki cho từ đã lưu (Quên/Khó/Nhớ/Dễ), menu ℹ️ |
+| **Cỡ chữ** | Phóng to/thu nhỏ nội dung (Nhỏ → Rất lớn), menu ℹ️ |
+| **Giao diện sáng/tối** | Toggle Light/Dark theme trong menu ℹ️ |
 | **Clipboard Watch** | Tự động tra khi copy text từ ứng dụng khác |
 | **Global hotkey** | Mặc định `Ctrl+Shift+D`, tuỳ chỉnh qua dialog ⚙ |
 | **Mini mode** | Thu gọn cửa sổ để xem cạnh tài liệu |
 | **Đánh dấu & Lịch sử** | Lưu từ yêu thích, click để tra lại ngay (không gọi API) |
 | **Góp ý bản dịch** | Lưu phản hồi local → xuất `.xlsx` hoặc Google Sheets |
 | **Giao diện VI/EN** | Toggle ngôn ngữ giao diện trong menu ℹ️ |
-| **Lưu trạng thái** | Nhớ ngôn ngữ, clipboard, chip lock, auto-search qua lần khởi động |
+| **Lưu trạng thái** | Nhớ ngôn ngữ, clipboard, chip lock, auto-search, theme, cỡ chữ qua lần khởi động |
 
 ---
 
