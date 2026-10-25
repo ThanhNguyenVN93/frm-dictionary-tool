@@ -104,5 +104,9 @@ namespace DictionaryTool.UI
         public static string MenuLangToggle     => IsVietnamese
             ? "🌐  Switch to English"
             : "🌐  Chuyển sang Tiếng Việt";
+
+        public static string MenuAutoSearch     => IsVietnamese
+            ? "⏱  Tự động tra"
+            : "⏱  Auto-search";
     }
 }

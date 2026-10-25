@@ -33,6 +33,11 @@ namespace DictionaryTool.UI
         private string _lastSearchedWord;
         private string _currentResultQuery;
         private Language _currentResultLanguage;
+        private string _currentResultSummary;      // tóm tắt kết quả để pre-fill FeedbackDialog
+        private UserFeedbackRepository _feedbackRepository;
+
+        private bool _autoSearchEnabled;           // mặc định tắt (Enter-only)
+        private int  _autoSearchDelay = 1500;      // ms, chỉ dùng khi _autoSearchEnabled = true
 
         private const int HotKeyId = 1;
         private uint _hotkeyModifiers = NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT;
@@ -96,7 +101,8 @@ namespace DictionaryTool.UI
             ITatoebaRepository tatoebaRepository,
             IHistoryRepository historyRepository,
             IBookmarkRepository bookmarkRepository,
-            IBookmarkXlsxExporter bookmarkXlsxExporter) : this()
+            IBookmarkXlsxExporter bookmarkXlsxExporter,
+            UserFeedbackRepository feedbackRepository = null) : this()
         {
             _trilingualLookupService = trilingualLookupService ?? throw new ArgumentNullException(nameof(trilingualLookupService));
             _audioCacheRepository = audioCacheRepository ?? throw new ArgumentNullException(nameof(audioCacheRepository));
@@ -108,8 +114,10 @@ namespace DictionaryTool.UI
             _historyRepository = historyRepository ?? throw new ArgumentNullException(nameof(historyRepository));
             _bookmarkRepository = bookmarkRepository ?? throw new ArgumentNullException(nameof(bookmarkRepository));
             _bookmarkXlsxExporter = bookmarkXlsxExporter ?? throw new ArgumentNullException(nameof(bookmarkXlsxExporter));
+            _feedbackRepository = feedbackRepository ?? new UserFeedbackRepository();
 
             LoadSettings();
+            SetupAutoSearchMenu();
             ResetToIdleState();
             ApplyClipboardButtonState();
             ApplyUiLanguage();
@@ -383,10 +391,23 @@ namespace DictionaryTool.UI
 
         private void txtSearch_TextChanged(object sender, EventArgs e)
         {
-            // Debounce: mỗi keystroke reset lại timer, chỉ search sau khi người dùng
-            // ngừng gõ ~450ms (spec 3.2).
+            // Auto-search tắt theo mặc định — chỉ Enter kích hoạt tra từ. Khi bật
+            // auto-search trong menu, debounceTimer chạy với delay đã cấu hình.
+            if (!_autoSearchEnabled) return;
             debounceTimer.Stop();
+            debounceTimer.Interval = _autoSearchDelay;
             debounceTimer.Start();
+        }
+
+        private void txtSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.Handled          = true;
+                e.SuppressKeyPress = true;
+                debounceTimer.Stop();
+                _ = SearchAsync(txtSearch.Text);
+            }
         }
 
         private async void debounceTimer_Tick(object sender, EventArgs e)
@@ -589,8 +610,13 @@ namespace DictionaryTool.UI
 
         private void tsmiGopY_Click(object sender, EventArgs e)
         {
-            try { System.Diagnostics.Process.Start("https://github.com/ThanhNguyenVN93/frm-dictionary-tool/issues"); }
-            catch { }
+            using (var dlg = new FeedbackDialog(
+                _feedbackRepository,
+                prefillQuery: _currentResultQuery,
+                prefillWrong: _currentResultSummary))
+            {
+                dlg.ShowDialog(this);
+            }
         }
 
         private void tsmiDongGop_Click(object sender, EventArgs e)
@@ -741,10 +767,33 @@ namespace DictionaryTool.UI
 
             _currentResultQuery = result.Query;
             _currentResultLanguage = result.DetectedLanguage;
+            // Tóm tắt kết quả dạng "VI: teacher, instructor" để pre-fill FeedbackDialog
+            _currentResultSummary = BuildResultSummary(result);
             btnBookmarkToggle.Enabled = true;
             _ = _historyRepository.AddAsync(result.Query, result.DetectedLanguage);
             _ = _historyRepository.SaveTrilingualResultAsync(result.Query, result.DetectedLanguage, result);
             _ = RefreshBookmarkButtonAsync();
+        }
+
+        private static string BuildResultSummary(TrilingualResult result)
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            if (!result.VietnameseResult.NotFound && result.VietnameseResult.Definitions?.Count > 0)
+                parts.Add("VI: " + string.Join(", ", result.VietnameseResult.Definitions.GetRange(0, Math.Min(2, result.VietnameseResult.Definitions.Count))));
+            var enDef = result.EnglishResult?.LearnerMeanings?.Count > 0
+                ? result.EnglishResult.LearnerMeanings[0].ShortDefinitions?.Count > 0
+                    ? result.EnglishResult.LearnerMeanings[0].ShortDefinitions[0]
+                    : null
+                : result.EnglishResult?.Meanings?.Count > 0
+                    ? result.EnglishResult.Meanings[0].Definitions?.Count > 0
+                        ? result.EnglishResult.Meanings[0].Definitions[0].Definition
+                        : null
+                    : null;
+            if (result.EnglishResult != null && !result.EnglishResult.NotFound && enDef != null)
+                parts.Add("EN: " + enDef);
+            if (!result.ChineseResult.NotFound)
+                parts.Add("ZH: " + result.ChineseResult.Simplified);
+            return string.Join(" | ", parts);
         }
 
         private async Task RefreshBookmarkButtonAsync()
@@ -1254,6 +1303,60 @@ namespace DictionaryTool.UI
                 case "ZH": _lockedLanguage = Language.Chinese; break;
                 default:   _lockedLanguage = null; break;
             }
+
+            if (bool.TryParse(System.Configuration.ConfigurationManager.AppSettings["UI:AutoSearchEnabled"], out var autoSearch))
+                _autoSearchEnabled = autoSearch;
+
+            if (int.TryParse(System.Configuration.ConfigurationManager.AppSettings["UI:AutoSearchDelay"], out var delay) && delay >= 500)
+                _autoSearchDelay = delay;
+        }
+
+        /// <summary>
+        /// Thêm mục "Tự động tra" vào cmsInfo programmatically (tránh sửa Designer cho
+        /// submenu phức tạp). Gọi sau InitializeComponent.
+        /// </summary>
+        private void SetupAutoSearchMenu()
+        {
+            var sep = new System.Windows.Forms.ToolStripSeparator();
+            cmsInfo.Items.Insert(cmsInfo.Items.IndexOf(tsmiSepLang), sep);
+
+            var tsmiAuto = new System.Windows.Forms.ToolStripMenuItem
+            {
+                Text        = UiStrings.MenuAutoSearch,
+                CheckOnClick = true,
+                Checked     = _autoSearchEnabled
+            };
+
+            // Sub-items: chọn delay
+            var delays = new[] { (500, "0.5s"), (1000, "1s"), (1500, "1.5s"), (2000, "2s"), (3000, "3s") };
+            foreach (var (ms, label) in delays)
+            {
+                var item = new System.Windows.Forms.ToolStripMenuItem
+                {
+                    Text    = label,
+                    Tag     = ms,
+                    Checked = (_autoSearchDelay == ms)
+                };
+                item.Click += (s, e) =>
+                {
+                    _autoSearchDelay = (int)((System.Windows.Forms.ToolStripMenuItem)s).Tag;
+                    SaveSetting("UI:AutoSearchDelay", _autoSearchDelay.ToString());
+                    // Uncheck tất cả sub-items, check cái vừa chọn
+                    foreach (System.Windows.Forms.ToolStripMenuItem sub in tsmiAuto.DropDownItems)
+                        sub.Checked = (int)sub.Tag == _autoSearchDelay;
+                };
+                tsmiAuto.DropDownItems.Add(item);
+            }
+
+            tsmiAuto.CheckedChanged += (s, e) =>
+            {
+                _autoSearchEnabled = tsmiAuto.Checked;
+                SaveSetting("UI:AutoSearchEnabled", _autoSearchEnabled.ToString().ToLower());
+                if (!_autoSearchEnabled)
+                    debounceTimer.Stop();
+            };
+
+            cmsInfo.Items.Insert(cmsInfo.Items.IndexOf(sep), tsmiAuto);
         }
 
         private void ApplyClipboardButtonState()

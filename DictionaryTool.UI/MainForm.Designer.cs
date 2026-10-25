@@ -165,6 +165,7 @@ namespace DictionaryTool.UI
             this.txtSearch.TabIndex = 13;
             this.txtSearch.TextOffset = new System.Drawing.Point(4, 0);
             this.txtSearch.TextChanged += new System.EventHandler(this.txtSearch_TextChanged);
+            this.txtSearch.KeyDown += new System.Windows.Forms.KeyEventHandler(this.txtSearch_KeyDown);
             // 
             // btnSearch
             // 
@@ -766,7 +767,7 @@ namespace DictionaryTool.UI
             // 
             // debounceTimer
             // 
-            this.debounceTimer.Interval = 450;
+            this.debounceTimer.Interval = 1500;
             this.debounceTimer.Tick += new System.EventHandler(this.debounceTimer_Tick);
             // 
             // MainForm
