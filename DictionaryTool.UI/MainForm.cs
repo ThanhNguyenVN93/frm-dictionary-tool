@@ -129,6 +129,10 @@ namespace DictionaryTool.UI
             _bookmarkXlsxExporter = bookmarkXlsxExporter ?? throw new ArgumentNullException(nameof(bookmarkXlsxExporter));
             _feedbackRepository = feedbackRepository ?? new UserFeedbackRepository();
 
+            // Luôn mở giữa màn hình (trước đây dùng vị trí mặc định của Windows nên
+            // cửa sổ nhảy lung tung / lệch sang màn hình phụ).
+            StartPosition = FormStartPosition.CenterScreen;
+
             LoadSettings();
             SetupAutoSearchMenu();
             SetupExtraMenu();

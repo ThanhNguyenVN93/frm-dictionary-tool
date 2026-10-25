@@ -92,6 +92,8 @@ namespace DictionaryTool.UI
             _chkCloseToTray.CheckedChanged += (s, e) => _owner.SetCloseToTray(_chkCloseToTray.Checked);
 
             // --- Phím tắt gọi nhanh ---
+            // Nhãn "Phím tắt gọi nhanh" khá dài (~150px) nên tổ hợp phím đặt ở x=210
+            // để không đè lên nhãn; nút "Đổi…" dời sang phải tương ứng.
             AddRowLabel(UiStrings.SettingsHotkey, 250);
             _lblHotkeyValue = new Label
             {
@@ -99,9 +101,9 @@ namespace DictionaryTool.UI
                 AutoSize = true,
                 Font = new Font("Segoe UI", 10F, FontStyle.Bold),
                 ForeColor = UiPalette.Accent,
-                Location = new Point(150, 250)
+                Location = new Point(210, 253)
             };
-            var btnHotkey = MakeSegment(UiStrings.SettingsChangeHotkey, 330, 246, 104);
+            var btnHotkey = MakeSegment(UiStrings.SettingsChangeHotkey, 342, 246, 104);
             btnHotkey.Click += (s, e) =>
             {
                 _owner.OpenHotkeyConfigDialog();
